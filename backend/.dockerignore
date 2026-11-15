@@ -1,0 +1,12 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+.env
+.env.*
+storage
+tests
+blanko_ppat_dev.db
+*.log
+.git
+.gitignore

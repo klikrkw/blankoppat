@@ -1,0 +1,91 @@
+# Blanko PPAT — Docker Compose (production)
+#
+# Catatan penting (PRD 60A):
+# - TIDAK ada service `mysql` di file ini.
+# - MySQL berjalan sebagai service native pada Ubuntu Server.
+# - Container menjangkau MySQL melalui host.docker.internal (extra_hosts).
+# - Nginx container hanya listen di 127.0.0.1:${NGINX_PORT:-8091}; akses publik
+#   lewat Cloudflare Tunnel (cloudflared di host) yang diarahkan ke port tersebut.
+# - Semua kredensial diambil dari file `.env` di root project.
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        # Port http Next.js di dalam container. Bisa diubah tanpa rebuild
+        # lewat environment PORT di bawah; ARG hanya untuk metadata EXPOSE.
+        FRONTEND_PORT: ${FRONTEND_PORT:-3002}
+    environment:
+      TZ: ${TZ:-Asia/Jakarta}
+      PORT: ${FRONTEND_PORT:-3002}
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: ${MYSQL_HOST:-host.docker.internal}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-blanko_ppat}
+      MYSQL_USER: ${MYSQL_USER:-webuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-user123#}
+      JWT_SECRET: ${JWT_SECRET:-please_change_me}
+      # Path relatif terhadap WORKDIR /app -> /app/storage.
+      # Sengaja relatif agar path dokumen lama (`storage/documents/...`)
+      # tetap valid dan konsisten dengan dokumen baru.
+      STORAGE_PATH: ${STORAGE_PATH:-storage}
+      APP_ENV: ${APP_ENV:-production}
+      APP_URL: ${APP_URL:-http://localhost:${NGINX_PORT:-8091}}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      TZ: ${TZ:-Asia/Jakarta}
+      E_KTP_SCAN_WEBHOOK: ${E_KTP_SCAN_WEBHOOK:-}
+      E_KTP_SCAN_API_KEY: ${E_KTP_SCAN_API_KEY:-}
+      E_KTP_SCAN_BASIC_USER: ${E_KTP_SCAN_BASIC_USER:-}
+      E_KTP_SCAN_BASIC_PASS: ${E_KTP_SCAN_BASIC_PASS:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Data template & dokumen existing ada di backend/storage.
+      - ./backend/storage:/app/storage
+
+  # Belum dipakai backend saat ini (disiapkan untuk worker DOCX di masa depan).
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      # Hanya localhost; Cloudflare Tunnel di host meneruskan ke port ini.
+      # Ubah NGINX_PORT di .env untuk mengganti port publik lokal.
+      - "127.0.0.1:${NGINX_PORT:-8091}:80"
+    environment:
+      # Dipakai template nginx/default.conf.template (envsubst saat start).
+      FRONTEND_PORT: ${FRONTEND_PORT:-3002}
+      # Batasi substitusi hanya ke variabel port, agar $host/$remote_addr dsb.
+      # tidak tersentuh envsubst. `$$` = literal `$` di compose.
+      NGINX_ENVSUBST_FILTER: "^(FRONTEND_PORT)$$"
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./backend/storage:/storage:ro
+    depends_on:
+      - frontend
+      - backend
+
+networks:
+  default:
+    name: blankoppat_net
+    ipam:
+      config:
+        # Subnet tetap agar aturan firewall MySQL bisa dibatasi ke jaringan ini.
+        - subnet: ${DOCKER_SUBNET:-172.28.0.0/16}
+
+volumes:
+  redis-data:

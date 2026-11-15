@@ -1,0 +1,7 @@
+import StaffPage from "./staff-page";
+
+export const instant = false;
+
+export default function Page() {
+  return <StaffPage />;
+}

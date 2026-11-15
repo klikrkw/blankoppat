@@ -1,0 +1,145 @@
+========================================================================
+PROMPT CANVA — VIDEO TUTORIAL SINGKAT APLIKASI BLANKO PPAT
+YouTube Shorts / Reels / TikTok (9:16)
+========================================================================
+File    : prompt-video-tutorial-canva.txt
+Aplikasi: Blanko PPAT (dokumen akta PPAT otomatis dari template DOCX)
+Durasi  : 45 detik (versi utama), 15 detik (teaser)
+Format  : 1080 x 1920 px, 30 fps
+
+
+========================================================================
+1. PROMPT UTAMA — COPY PASTE KE CANVA AI VIDEO / MAGIC DESIGN
+========================================================================
+
+Buat video tutorial pendek vertikal 9:16 (YouTube Shorts, 45 detik) untuk aplikasi
+"Blanko PPAT" — aplikasi pembuat dokumen akta PPAT/Notaris otomatis dari template DOCX.
+
+Gaya visual: modern, bersih, profesional, tech-savvy. Latar gelap navy-charcoal
+(#0B1220) dengan aksen biru terang (#3B82F6) dan putih. Tipografi sans-serif bold
+(Inter/Poppins) untuk headline, ukuran besar dan mudah dibaca di layar HP.
+Gunakan mockup UI aplikasi (dashboard, form, tabel) dengan animasi slide, zoom halus,
+cursor klik, dan highlight kotak biru pada bagian yang dijelaskan.
+Tambahkan progress bar tipis di bawah, nomor langkah, ikon garis minimalis
+(dokumen, KTP, peta, template, unduh), dan transisi cepat 0.3 detik.
+Musik: upbeat corporate teknologi, tempo sedang, volume rendah (musik 30%, narasi 100%).
+Tanpa teks kecil. Setiap scene maksimal 1 pesan utama.
+
+Alur scene:
+1) Hook (0-3 dtk): "Bikin akta PPAT cuma hitungan menit?" teks besar + animasi dokumen
+   bertumpuk berubah jadi 1 file rapi.
+2) Intro (3-7 dtk): logo "Blanko PPAT", tagline "Dokumen akta otomatis, rapi, tanpa
+   rewel format".
+3) Langkah 1 (7-14 dtk): layar Data e-KTP + Objek Tanah, tunjukkan scan foto e-KTP
+   terisi otomatis.
+4) Langkah 2 (14-21 dtk): layar Template, unggah DOCX, placeholder {{...}} menyala,
+   preview dokumen.
+5) Langkah 3 (21-29 dtk): layar Transaksi, pilih jenis transaksi, multi peran pihak,
+   nomor otomatis.
+6) Langkah 4 (29-37 dtk): klik Generate Dokumen, loading singkat, daftar dokumen
+   muncul, klik Download DOCX.
+7) Hasil (37-42 dtk): file DOCX terbuka di Word, tabel & tab stop rapi, teks
+   "Format asli tetap utuh".
+8) CTA (42-45 dtk): logo + teks "Coba sekarang" + panah ke kanan + "Panduan lengkap
+   di aplikasi".
+
+Teks overlay singkat, huruf besar, maksimal 5 kata per baris.
+Gunakan safe area vertikal: elemen penting di area tengah, sisakan 15% atas dan bawah.
+Akhir video tanpa black frame, langsung loop ke scene 1.
+
+
+========================================================================
+2. STORYBOARD RINGKAS
+========================================================================
+
+No | Waktu  | Visual                                     | Teks overlay                  | Narasi (VO)
+---+--------+--------------------------------------------+-------------------------------+----------------------------------
+1  | 0-3s   | Tumpukan dokumen berantakan -> 1 file rapi | "Akta PPAT dalam hitungan menit" | "Bikin akta PPAT masih manual?"
+2  | 3-7s   | Logo + UI dashboard                        | "Blanko PPAT"                 | "Kenalin, Blanko PPAT."
+3  | 7-14s  | Form e-KTP, hasil scan muncul              | "Data terisi otomatis"        | "Scan e-KTP, data langsung masuk."
+4  | 14-21s | Upload DOCX + placeholder menyala          | "Template DOCX apapun"        | "Upload template Word, format tetap utuh."
+5  | 21-29s | Form transaksi + pilih pihak               | "Multi peran, nomor otomatis" | "Buat transaksi, pilih pihak, nomor otomatis."
+6  | 29-37s | Klik Generate -> daftar dokumen            | "Generate 1 klik"             | "Klik generate, dokumen langsung jadi."
+7  | 37-42s | File Word terbuka, tabel rapi              | "Format asli, tidak berantakan" | "Tabel, tab stop, dan font tetap rapi."
+8  | 42-45s | Logo + CTA                                 | "Coba sekarang"               | "Coba Blanko PPAT sekarang."
+
+
+========================================================================
+3. PROMPT ALTERNATIF — VERSI 15 DETIK (TEASER)
+========================================================================
+
+Video vertikal 9:16, 15 detik, gaya motion graphics modern gelap-biru untuk aplikasi
+Blanko PPAT. Tempo cepat, cut setiap 1.5 detik, teks besar minimalis.
+
+Scene:
+1) "Akta PPAT manual bikin repot?" (2 dtk)
+2) Animasi 4 ikon berurutan: scan e-KTP -> template DOCX -> transaksi -> generate (6 dtk)
+3) Layar dokumen jadi + centang hijau "Selesai" (4 dtk)
+4) Logo + "Blanko PPAT" + tombol "Coba sekarang" (3 dtk)
+
+Musik upbeat, tanpa narasi, hanya teks + SFX klik halus.
+Warna: navy #0B1220, aksen biru #3B82F6, putih. Font bold sans-serif.
+
+
+========================================================================
+4. PROMPT NASKAH VOICE-OVER (CANVA DOCS / AI VOICE)
+========================================================================
+
+Tulis naskah voice-over Bahasa Indonesia, durasi 45 detik, gaya santai-profesional,
+untuk video tutorial aplikasi Blanko PPAT (pembuat akta PPAT otomatis).
+
+Struktur:
+- Hook pertanyaan yang relatable (maks 8 kata)
+- Perkenalan aplikasi (1 kalimat)
+- 4 langkah inti: scan e-KTP, upload template DOCX, buat transaksi, generate & download
+- Penutup + ajakan mencoba
+
+Aturan: kalimat pendek (maks 12 kata), hindari istilah teknis berat, sebut manfaat
+bukan fitur ("format tetap rapi", "nomor otomatis", "hemat waktu").
+Sertakan penanda waktu [0-3 dtk], [3-7 dtk], dst.
+
+
+========================================================================
+5. SPESIFIKASI DESAIN UNTUK CANVA
+========================================================================
+
+Ukuran         : 1080 x 1920 px (9:16)
+Durasi         : 45 detik (Shorts), alternatif 15 detik
+FPS            : 30
+Warna          : #0B1220 (background), #3B82F6 (aksen), #FFFFFF (teks), #22C55E (sukses)
+Font           : Poppins Bold (headline), Inter Regular (subteks)
+Transisi       : slide + zoom halus, 0.3 s
+Elemen         : progress bar, nomor langkah bulat, ikon garis, cursor klik
+Audio          : musik corporate upbeat (30%), VO 100%, SFX klik halus
+Safe area      : hindari 15% area atas & bawah
+Caption        : aktifkan auto-caption, font besar, kontras tinggi
+
+
+========================================================================
+6. TIPS AGAR HASIL MENARIK
+========================================================================
+
+- Tampilkan hasil nyata (dokumen Word rapi) di 5 detik terakhir — ini yang membuat
+  orang percaya.
+- Gunakan before/after: dokumen berantakan vs dokumen rapi.
+- Hindari menampilkan seluruh layar penuh; zoom ke area yang dibahas.
+- Satu scene = satu pesan. Jangan gabung 2 fitur dalam 1 scene.
+- Tambahkan teks "template DOCX apapun" karena itu pembeda utama aplikasi.
+- Ganti placeholder warna/logo bila ingin menyesuaikan brand kantor.
+
+
+========================================================================
+7. ASET YANG PERLU DISIAPKAN
+========================================================================
+
+- Logo aplikasi (PNG transparan)
+- Screenshot layar: Dashboard, Data e-KTP, Template, Transaksi, Dokumen
+- Rekaman layar singkat (screen recording) tiap langkah
+- File DOCX contoh hasil generate (untuk scene hasil)
+- Musik bebas royalti (Canva audio library)
+- Font: Poppins / Inter (tersedia di Canva)
+
+
+========================================================================
+SELESAI
+========================================================================
