@@ -34,6 +34,15 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     router.push("/login");
   };
 
+  // Menu terpanjang yang cocok dengan path aktif, agar submenu tidak ikut
+  // tersorot bersama menu induknya (mis. /profile vs /profile/password).
+  const activeHref = navSections
+    .flatMap((section) => section.items)
+    .filter(
+      (item) => pathname === item.href || pathname.startsWith(item.href + "/")
+    )
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 px-5 pt-5 pb-4">
@@ -54,10 +63,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             </p>
             <div className="space-y-0.5">
               {section.items.map((item) => {
-                const active =
-                  pathname === item.href ||
-                  (item.href !== "/dashboard" &&
-                    pathname.startsWith(item.href + "/"));
+                const active = item.href === activeHref;
                 const Icon = item.icon;
                 return (
                   <Link

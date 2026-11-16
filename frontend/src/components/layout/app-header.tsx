@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useRouter } from "next/navigation";
-import { LogOut, UserRound } from "lucide-react";
+import { KeyRound, LogOut, UserRound } from "lucide-react";
 
 export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
   const pathname = usePathname();
@@ -68,10 +68,16 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onSelect={() => router.push("/settings")}
+              onSelect={() => router.push("/profile")}
               className="gap-2"
             >
-              <UserRound className="size-4" /> Profil & Pengaturan
+              <UserRound className="size-4" /> Update Profil
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => router.push("/profile/password")}
+              className="gap-2"
+            >
+              <KeyRound className="size-4" /> Ganti Password
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => {

@@ -3,7 +3,9 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci || npm install
 COPY . .
-ARG NEXT_PUBLIC_API_URL=/api
+# KOSONG = same-origin lewat nginx (path di kode sudah /api/v1/...).
+# Jangan diisi "/api" (menghasilkan /api/api/v1/...). Dev lokal: http://localhost:8000
+ARG NEXT_PUBLIC_API_URL=
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run build

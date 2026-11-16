@@ -13,7 +13,11 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        # HARUS kosong untuk Docker (same-origin lewat nginx). Jangan diisi "/api":
+        # path di lib/api.ts sudah memakai "/api/v1/...", sehingga "/api" membuat
+        # URL ganda "/api/api/v1/..." (404).
+        # Dev lokal: NEXT_PUBLIC_API_URL=http://localhost:8000
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
         # Port http Next.js di dalam container. Bisa diubah tanpa rebuild
         # lewat environment PORT di bawah; ARG hanya untuk metadata EXPOSE.
         FRONTEND_PORT: ${FRONTEND_PORT:-3002}

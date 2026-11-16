@@ -150,7 +150,9 @@ MYSQL_USER=webuser
 MYSQL_PASSWORD=PASSWORD_KUAT
 
 JWT_SECRET=<openssl rand -hex 32>
-NEXT_PUBLIC_API_URL=/api
+# WAJIB kosong untuk Docker (same-origin lewat nginx).
+# Mengisi "/api" membuat URL ganda /api/api/v1/... -> login gagal (404).
+NEXT_PUBLIC_API_URL=
 CORS_ORIGINS=https://ppat.domain-anda.com
 
 # Port (opsional, default sudah sesuai)

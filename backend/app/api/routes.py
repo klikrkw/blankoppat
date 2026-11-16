@@ -455,6 +455,73 @@ def me(user: dict = Depends(get_current_user)):
     return {k: v for k, v in user.items() if not k.startswith("_")}
 
 
+class ProfileUpdateBody(BaseModel):
+    name: str
+    username: str
+    email: str = ""
+
+
+class ChangePasswordBody(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.put("/auth/profile")
+def update_profile(
+    body: ProfileUpdateBody,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(get_current_user),
+):
+    """Perbarui profil pengguna yang sedang login (nama, username, email)."""
+    target = session.get(User, int(user["id"]))
+    if target is None:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+    name = body.name.strip()
+    username = body.username.strip()
+    if not name or not username:
+        raise HTTPException(status_code=400, detail="Nama dan username wajib diisi")
+    if session.execute(
+        select(User.id).where(User.username == username, User.id != target.id)
+    ).first():
+        raise HTTPException(status_code=400, detail="Username sudah digunakan")
+    email = body.email.strip() or target.email
+    if session.execute(
+        select(User.id).where(User.email == email, User.id != target.id)
+    ).first():
+        raise HTTPException(status_code=400, detail="Email sudah digunakan")
+
+    target.name = name
+    target.username = username
+    target.email = email
+    add_audit(session, target.id, "UPDATE_PROFILE", "auth", str(target.id), "Profil diperbarui")
+    session.commit()
+    session.refresh(target)
+    return user_to_dict(target, get_user_roles(session, target.id))
+
+
+@router.post("/auth/change-password")
+def change_password(
+    body: ChangePasswordBody,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(get_current_user),
+):
+    """Ganti password pengguna yang sedang login."""
+    target = session.get(User, int(user["id"]))
+    if target is None:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+    if not verify_password(body.current_password, target.password_hash):
+        raise HTTPException(status_code=400, detail="Password saat ini salah")
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password baru minimal 6 karakter")
+    if body.current_password == body.new_password:
+        raise HTTPException(status_code=400, detail="Password baru harus berbeda dari password saat ini")
+
+    target.password_hash = hash_password(body.new_password)
+    add_audit(session, target.id, "CHANGE_PASSWORD", "auth", str(target.id), "Password diubah")
+    session.commit()
+    return {"success": True}
+
+
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
@@ -1384,8 +1451,7 @@ def delete_template(
 
 
 @router.post("/templates/{template_id}/upload")
-async def upload_template_docx(
-    template_id: int,
+async def upload_template_docx(    template_id: int,
     file: UploadFile = FastAPIFile(...),
     session: Session = Depends(session_dep),
     user: dict = Depends(get_current_user),
@@ -1418,6 +1484,73 @@ async def upload_template_docx(
     session.commit()
 
     return {"template_id": t.id, "file_path": t.file_path, "content": t.content or ""}
+
+
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+@router.get("/templates/{template_id}/download")
+def download_template(
+    template_id: int,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(get_current_user),
+):
+    """Unduh file DOCX template asli (format tetap seperti file yang diunggah)."""
+    t = session.get(Template, template_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Template tidak ditemukan")
+
+    source = Path(t.file_path) if t.file_path else None
+    if source is not None and source.exists():
+        return FileResponse(
+            source,
+            media_type=DOCX_MEDIA_TYPE,
+            filename=f"{t.code}-v{t.version}-template.docx",
+        )
+
+    # Template yang dibuat dari teks (belum ada file unggahan): buat DOCX
+    # sederhana dari konten agar tombol unduh tetap berfungsi.
+    if not (t.content or "").strip():
+        raise HTTPException(status_code=404, detail="Template belum memiliki file DOCX")
+    out_dir = STORAGE / "templates" / str(t.id)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "generated-from-content.docx"
+    docx_engine.create_docx_from_text(t.content or "", str(out_path))
+    return FileResponse(
+        out_path,
+        media_type=DOCX_MEDIA_TYPE,
+        filename=f"{t.code}-v{t.version}-template.docx",
+    )
+
+
+@router.post("/templates/{template_id}/test-docx")
+def generate_template_test_docx(
+    template_id: int,
+    body: PreviewRequest,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(get_current_user),
+):
+    """Render template DOCX dengan data sample tanpa mengubah format asli."""
+    t = session.get(Template, template_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="Template tidak ditemukan")
+
+    out_dir = STORAGE / "templates" / str(t.id)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "test-render.docx"
+
+    source = Path(t.file_path) if t.file_path else None
+    if source is not None and source.exists():
+        docx_engine.generate_docx(str(source), str(out_path), body.context)
+    else:
+        text = template_engine.render_text(t.content or "", body.context)
+        docx_engine.create_docx_from_text(text, str(out_path))
+
+    return FileResponse(
+        out_path,
+        media_type=DOCX_MEDIA_TYPE,
+        filename=f"{t.code}-test.docx",
+    )
 
 
 @router.post("/templates/preview")

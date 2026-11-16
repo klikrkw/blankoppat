@@ -14,12 +14,14 @@ interface AuthContextValue {
   user: User | null;
   login: (username: string, password: string) => Promise<User | null>;
   logout: () => void;
+  updateUser: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   login: async () => null,
   logout: () => {},
+  updateUser: () => {},
 });
 
 const STORAGE_KEY = "blankoppat_user";
@@ -81,8 +83,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStoredUser(null);
   }, []);
 
+  const updateUser = useCallback((u: User) => {
+    setStoredUser(u);
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

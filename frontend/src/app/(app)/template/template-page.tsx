@@ -54,7 +54,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDateID } from "@/lib/format";
 import { extractVariables, renderTemplate } from "@/lib/template-engine";
-import { downloadTextAsDocx } from "@/lib/download";
+import { downloadBlob } from "@/lib/download";
 import { ektp, obyek } from "@/lib/mock-data";
 import type { Template, TemplateCategory, TemplateGroup } from "@/lib/types";
 
@@ -129,17 +129,6 @@ export default function TemplatePage() {
     resolver: zodResolver(templateSchema),
     defaultValues: emptyForm,
   });
-
-  const loadContent = async (templateId: number): Promise<string> => {
-    if (contentCache[templateId] !== undefined) return contentCache[templateId];
-    try {
-      const content = await api.getTemplateContent(templateId);
-      setContentCache((c) => ({ ...c, [templateId]: content }));
-      return content;
-    } catch {
-      return "";
-    }
-  };
 
   useEffect(() => {
     if (!testTemplate || contentCache[testTemplate.id] !== undefined) return;
@@ -274,13 +263,8 @@ export default function TemplatePage() {
   const handleGenerateTest = async () => {
     if (!testTemplate) return;
     try {
-      const content = await loadContent(testTemplate.id);
-      if (!content) {
-        toast.error("Konten template belum tersedia");
-        return;
-      }
-      const rendered = renderTemplate(content, sampleContext);
-      await downloadTextAsDocx(rendered, `${testTemplate.code}-test.docx`);
+      const blob = await api.generateTemplateTestDocx(testTemplate.id, sampleContext);
+      downloadBlob(blob, `${testTemplate.code}-test.docx`);
       toast.success("Test DOCX berhasil diunduh");
     } catch (e) {
       toast.error("Gagal membuat Test DOCX", { description: e instanceof Error ? e.message : undefined });
@@ -592,18 +576,19 @@ export default function TemplatePage() {
                             aria-label="Download"
                             onClick={async () => {
                               try {
-                                const content =
-                                  (await loadContent(t.id)) ||
-                                  `${t.name}\n\n{{pihak.nama}}\n{{obyek.nomor_hak}}\n`;
-                                await downloadTextAsDocx(
-                                  content,
+                                const blob = await api.downloadTemplate(t.id);
+                                downloadBlob(
+                                  blob,
                                   `${t.code}-v${t.version}-template.docx`
                                 );
                                 toast.success("Template diunduh", {
                                   description: `${t.code}-v${t.version}-template.docx`,
                                 });
-                              } catch {
-                                toast.error("Gagal mengunduh template");
+                              } catch (e) {
+                                toast.error("Gagal mengunduh template", {
+                                  description:
+                                    e instanceof Error ? e.message : undefined,
+                                });
                               }
                             }}
                           >

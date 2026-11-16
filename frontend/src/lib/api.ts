@@ -1,6 +1,6 @@
 "use client";
 
-import { apiFetch, ApiError, API_BASE, getToken } from "./http";
+import { apiFetch, ApiError, buildUrl, getToken } from "./http";
 import type {
   AuditLog,
   BankAccount,
@@ -50,6 +50,24 @@ export const api = {
     } catch {
       return null;
     }
+  },
+
+  async updateProfile(data: {
+    name: string;
+    username: string;
+    email: string;
+  }): Promise<User> {
+    return apiFetch<User>("/api/v1/auth/profile", { method: "PUT", json: data });
+  },
+
+  async changePassword(data: {
+    current_password: string;
+    new_password: string;
+  }): Promise<{ success: boolean }> {
+    return apiFetch<{ success: boolean }>("/api/v1/auth/change-password", {
+      method: "POST",
+      json: data,
+    });
   },
 
   // ---- Dashboard ----
@@ -103,7 +121,7 @@ export const api = {
 
     let res: Response;
     try {
-      res = await fetch(`${API_BASE}/api/v1/ektp/scan`, {
+      res = await fetch(buildUrl("/api/v1/ektp/scan"), {
         method: "POST",
         headers,
         body: formData,
@@ -516,10 +534,29 @@ export const api = {
     });
   },
 
+  async downloadTemplate(id: number): Promise<Blob> {
+    const res = await apiFetch<Response>(`/api/v1/templates/${id}/download`, {
+      raw: true,
+    });
+    return await res.blob();
+  },
+
+  async generateTemplateTestDocx(
+    id: number,
+    context: Record<string, unknown>
+  ): Promise<Blob> {
+    const res = await apiFetch<Response>(`/api/v1/templates/${id}/test-docx`, {
+      method: "POST",
+      json: { template_id: id, context },
+      raw: true,
+    });
+    return await res.blob();
+  },
+
   async uploadTemplateDocx(id: number, file: File): Promise<{ file_path: string; content: string }> {
     const form = new FormData();
     form.append("file", file);
-    const res = await fetch(`${API_BASE}/api/v1/templates/${id}/upload`, {
+    const res = await fetch(buildUrl(`/api/v1/templates/${id}/upload`), {
       method: "POST",
       headers: { Authorization: `Bearer ${getToken() ?? ""}` },
       body: form,

@@ -10,6 +10,7 @@ import {
   FolderKanban,
   Gauge,
   IdCard,
+  KeyRound,
   LandPlot,
   LayoutTemplate,
   ListChecks,
@@ -18,6 +19,7 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  UserRound,
   UserRoundCheck,
   Wrench,
   type LucideIcon,
@@ -97,6 +99,13 @@ export const navSections: NavSection[] = [
     ],
   },
   {
+    label: "Akun",
+    items: [
+      { label: "Update Profil", href: "/profile", icon: UserRound },
+      { label: "Ganti Password", href: "/profile/password", icon: KeyRound },
+    ],
+  },
+  {
     label: "Lainnya",
     items: [
       { label: "Subscription", href: "/subscription", icon: CreditCard },
@@ -129,6 +138,8 @@ export const pageTitles: Record<string, string> = {
   "/data/jobs": "Jobs",
   "/data/staff": "Staff",
   "/panduan": "Panduan",
+  "/profile": "Update Profil",
+  "/profile/password": "Ganti Password",
   "/dynamic-field": "Dynamic Field",
   "/function": "Function",
   "/administrasi/users": "Users",

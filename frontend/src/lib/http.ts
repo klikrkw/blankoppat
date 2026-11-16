@@ -2,12 +2,27 @@
 
 /**
  * HTTP client untuk FastAPI backend (Blanko PPAT API).
- * Base URL diambil dari NEXT_PUBLIC_API_URL (default http://localhost:8000).
+ * API_BASE = origin backend TANPA prefix "/api", karena semua path di lib/api.ts
+ * sudah memakai "/api/v1/...".
+ * - Development : NEXT_PUBLIC_API_URL=http://localhost:8000
+ * - Docker/nginx: NEXT_PUBLIC_API_URL= (kosong) → same-origin lewat nginx
+ * Default (tidak diset) juga http://localhost:8000.
  */
 
 export const API_BASE = (
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 ).replace(/\/+$/, "");
+
+/**
+ * Gabungkan base + path tanpa menghasilkan "/api/api/...".
+ * Berguna untuk .env lama yang masih berisi NEXT_PUBLIC_API_URL=/api.
+ */
+export function buildUrl(path: string): string {
+  if (API_BASE.endsWith("/api") && path.startsWith("/api/")) {
+    return `${API_BASE.slice(0, -"/api".length)}${path}`;
+  }
+  return `${API_BASE}${path}`;
+}
 
 const TOKEN_KEY = "blankoppat_token";
 
@@ -68,7 +83,7 @@ export async function apiFetch<T>(
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}${buildQuery(options?.query)}`, {
+    res = await fetch(`${buildUrl(path)}${buildQuery(options?.query)}`, {
       method,
       headers,
       body: options?.json !== undefined ? JSON.stringify(options.json) : undefined,

@@ -63,8 +63,10 @@ Frontend (Next.js) memanggil FastAPI melalui HTTP; FastAPI mengakses MySQL
    npm run dev                      # http://localhost:3000
    ```
 
-5. Untuk deployment Docker Compose, frontend memakai `NEXT_PUBLIC_API_URL=/api`
-   (nginx memproksikan `/api` ke backend).
+5. Untuk deployment Docker Compose, **kosongkan** `NEXT_PUBLIC_API_URL`
+   (jangan `/api`): frontend memanggil `/api/v1/...` secara same-origin dan
+   nginx memproksikan `/api/` ke backend. Mengisi `/api` menghasilkan URL
+   ganda `/api/api/v1/...` → 404.
 
 Endpoint utama backend: login (`/api/v1/auth/login`), e-KTP, obyek,
 jenishak, letak, template (+konten & preview), custom field, jenis transaksi
