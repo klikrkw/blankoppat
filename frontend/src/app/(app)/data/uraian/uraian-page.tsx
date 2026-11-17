@@ -300,6 +300,11 @@ export default function UraianPage() {
                 className="text-[12.5px] leading-relaxed"
                 {...register("isi_uraian")}
               />
+              <p className="text-[11px] text-muted-foreground">
+                Gunakan <code className="font-mono">\n</code> untuk baris baru dan{" "}
+                <code className="font-mono">\t</code> untuk tab, termasuk saat dipanggil
+                langsung lewat {"{{uraian.Nama Uraian}}"}.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>Isi Singkat</Label>

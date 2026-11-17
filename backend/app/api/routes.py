@@ -141,7 +141,7 @@ def _settings_dict(session: Session) -> Dict[str, str]:
 
 
 def _decode_section_symbols(value: str) -> str:
-    """Terjemahkan simbol \\n (Enter) dan \\t (Tab) pada detail section."""
+    """Terjemahkan simbol \\n (Enter) dan \\t (Tab) pada teks dinamis."""
     return (value or "").replace("\\n", "\n").replace("\\t", "\t")
 
 
@@ -261,9 +261,13 @@ def _uraian_context(session: Session) -> Dict[str, str]:
             continue
         slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
         params = u.parameters or []
+        # Dukung simbol \n (baris baru) dan \t (tab) baik saat dipanggil
+        # langsung `{{uraian.Nama}}` maupun lewat `uraian('Nama')`.
+        isi = _decode_section_symbols(u.isi_uraian or "")
+        singkat = _decode_section_symbols(u.isi_singkat or "")
         entry = {
-            "isi": u.isi_uraian or "",
-            "singkat": u.isi_singkat or "",
+            "isi": isi,
+            "singkat": singkat,
             "parameters": params,
         }
         if slug:
@@ -272,8 +276,8 @@ def _uraian_context(session: Session) -> Dict[str, str]:
         # Uraian tanpa parameter tetap bisa dipanggil langsung via {{uraian.Nama}}.
         if not params:
             if slug:
-                result.setdefault(slug, u.isi_uraian or "")
-            result[name] = u.isi_uraian or ""
+                result.setdefault(slug, isi)
+            result[name] = isi
     result["__meta__"] = meta
     return result
 

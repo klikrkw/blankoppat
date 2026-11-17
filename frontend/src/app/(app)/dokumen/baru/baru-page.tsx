@@ -307,6 +307,23 @@ export default function DokumenBaruPage() {
     return map;
   }, [pihakList]);
 
+  const uraianContext = useMemo(() => {
+    const decode = (value: string) =>
+      value.split("\\n").join("\n").split("\\t").join("\t");
+    const map: Record<string, string> = {};
+    for (const u of uraianList) {
+      if ((u.parameters ?? []).length > 0) continue;
+      const isi = decode(u.isi_uraian ?? "");
+      const slug = u.nama_uraian
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+      if (slug && map[slug] === undefined) map[slug] = isi;
+      map[u.nama_uraian] = isi;
+    }
+    return map;
+  }, [uraianList]);
+
   const previewContext = useMemo(() => {
     const values = { ...customValues };
     Object.assign(values, { nomor_akta: txForm.nomor_transaksi, tanggal_akta: txForm.tanggal_transaksi });
@@ -342,11 +359,12 @@ export default function DokumenBaruPage() {
       letak: (obyekDetail as Obyek & { wilayah?: unknown })?.wilayah ?? {},
       wilayah: (obyekDetail as Obyek & { wilayah?: unknown })?.wilayah ?? {},
       custom: values,
+      uraian: uraianContext,
       system: {
         company_name: "PPAT & Notaris Ahmad Fauzi, S.H., M.Kn.",
       },
     };
-  }, [customValues, txForm, penjual, pembeli, saksi, obyekDetail, peranContext]);
+  }, [customValues, txForm, penjual, pembeli, saksi, obyekDetail, peranContext, uraianContext]);
 
   const previewDoc = useMemo(() => {
     const suratId = selectedSurat[0];
