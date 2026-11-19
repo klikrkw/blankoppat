@@ -171,6 +171,27 @@ Test backend:
 PYTHONPATH=backend python -m unittest discover -s backend/tests
 ```
 
+## Backup & Restore
+
+Panduan lengkap: **[BACKUP.md](BACKUP.md)**.
+
+```bash
+# backup project + database
+bash scripts/backup.sh
+
+# daftar backup
+bash scripts/backup.sh --list
+
+# restore (semua / database saja / file saja)
+bash scripts/restore.sh backups/latest
+bash scripts/restore.sh backups/latest --db-only
+bash scripts/restore.sh backups/latest --project-only
+```
+
+Backup disimpan di `backups/<timestamp>/` berisi `project.tar.gz`,
+`database.sql.gz`, `MANIFEST.txt`, dan `SHA256SUMS`. Restore membuat safety
+backup database saat ini terlebih dahulu.
+
 ## Deployment (Docker Compose, Ubuntu Server)
 
 Panduan lengkap: **[DEPLOY.md](DEPLOY.md)**.
