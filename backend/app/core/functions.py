@@ -126,14 +126,25 @@ def _expand_gelar(value: Any, mapping: Any) -> str:
 
     entries.sort(key=lambda item: item[0], reverse=True)
     combined = "|".join(f"(?:{pattern})" for _, pattern, _, _ in entries)
-    lookup = {
-        _gelar_key(singkatan): kepanjangan
-        for _, _, singkatan, kepanjangan in entries
-    }
-    regex = re.compile(
-        rf"(?<![A-Za-z0-9])(?:{combined})(?![A-Za-z0-9])", re.IGNORECASE
+    exact = {}
+    normalized = {}
+    for _, _, singkatan, kepanjangan in entries:
+        exact[singkatan] = kepanjangan
+        if singkatan.endswith("."):
+            exact[singkatan[:-1]] = kepanjangan
+        normalized.setdefault(_gelar_key(singkatan), kepanjangan)
+
+    boundary = rf"(?<![A-Za-z0-9])(?:{combined})(?![A-Za-z0-9])"
+    # Pass 1: pertahankan perbedaan huruf besar/kecil (Dr. = Doktor, dr. = Dokter).
+    text = re.compile(boundary).sub(
+        lambda m: exact.get(m.group(0), m.group(0)), text
     )
-    return regex.sub(lambda m: lookup.get(_gelar_key(m.group(0)), m.group(0)), text)
+    # Pass 2: fallback case-insensitive untuk penulisan lain (S.H. / s.h. / SH).
+    return re.compile(boundary, re.IGNORECASE).sub(
+        lambda m: exact.get(m.group(0))
+        or normalized.get(_gelar_key(m.group(0)), m.group(0)),
+        text,
+    )
 
 
 def _penerima_phb(items: Any, filters: Any, field: Any = "nama") -> str:

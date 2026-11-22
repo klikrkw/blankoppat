@@ -715,7 +715,7 @@ function gelarPattern(singkatan: string): string {
 }
 
 function expandGelar(value: unknown, mapping: unknown): string {
-  const text = value === null || value === undefined ? "" : String(value);
+  let text = value === null || value === undefined ? "" : String(value);
   if (!text.trim()) return "-";
   if (!isRecord(mapping)) return text;
 
@@ -730,16 +730,31 @@ function expandGelar(value: unknown, mapping: unknown): string {
 
   entries.sort((a, b) => b.pattern.length - a.pattern.length);
   const combined = entries.map((entry) => `(?:${entry.pattern})`).join("|");
-  const lookup = new Map(
-    entries.map((entry) => [gelarKey(entry.singkatan), entry.kepanjangan])
-  );
-  const regex = new RegExp(
-    `(^|[^A-Za-z0-9])(?:${combined})(?![A-Za-z0-9])`,
-    "gi"
-  );
-  return text.replace(regex, (match, prefix: string) => {
+  const exact = new Map<string, string>();
+  const normalized = new Map<string, string>();
+  for (const entry of entries) {
+    exact.set(entry.singkatan, entry.kepanjangan);
+    if (entry.singkatan.endsWith(".")) {
+      exact.set(entry.singkatan.slice(0, -1), entry.kepanjangan);
+    }
+    if (!normalized.has(gelarKey(entry.singkatan))) {
+      normalized.set(gelarKey(entry.singkatan), entry.kepanjangan);
+    }
+  }
+
+  const boundaries = `(^|[^A-Za-z0-9])(?:${combined})(?![A-Za-z0-9])`;
+  // Pass 1: case-sensitive agar Dr. (Doktor) dan dr. (Dokter) tetap berbeda.
+  text = text.replace(new RegExp(boundaries, "g"), (match, prefix: string) => {
     const token = match.slice(prefix.length);
-    return prefix + (lookup.get(gelarKey(token)) ?? token);
+    return prefix + (exact.get(token) ?? token);
+  });
+  // Pass 2: fallback case-insensitive untuk variasi penulisan lain.
+  return text.replace(new RegExp(boundaries, "gi"), (match, prefix: string) => {
+    const token = match.slice(prefix.length);
+    return (
+      prefix +
+      (exact.get(token) ?? normalized.get(gelarKey(token)) ?? token)
+    );
   });
 }
 
