@@ -600,6 +600,14 @@ class Pekerjaan(Base):
     nama_pekerjaan = Column(String(150), nullable=False)
 
 
+class Gelar(Base):
+    __tablename__ = "gelar"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    singkatan = Column(String(50), nullable=False, unique=True, index=True)
+    kepanjangan = Column(String(150), nullable=False)
+
+
 class Uraian(Base):
     __tablename__ = "uraian"
 

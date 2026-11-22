@@ -90,6 +90,52 @@ def _even(value: Any) -> bool:
         return False
 
 
+def _gelar_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _gelar_pattern(singkatan: str) -> str:
+    """Pola singkatan yang toleran terhadap titik/spasi, mis. S.H. / SH / S. H."""
+    letters = [ch for ch in str(singkatan or "") if ch.isalnum()]
+    if not letters:
+        return ""
+    parts: List[str] = []
+    for index, ch in enumerate(letters):
+        parts.append(re.escape(ch))
+        if index < len(letters) - 1:
+            parts.append(r"\.?\s*")
+    return "".join(parts) + r"\.?"
+
+
+def _expand_gelar(value: Any, mapping: Any) -> str:
+    """Ganti singkatan gelar pada teks dengan kepanjangan dari master Gelar."""
+    text = "" if value is None else str(value)
+    if not text.strip():
+        return "-"
+    if not isinstance(mapping, dict) or not mapping:
+        return text
+
+    entries = []
+    for singkatan, kepanjangan in mapping.items():
+        pattern = _gelar_pattern(str(singkatan))
+        if not pattern or not kepanjangan:
+            continue
+        entries.append((len(pattern), pattern, str(singkatan), str(kepanjangan)))
+    if not entries:
+        return text
+
+    entries.sort(key=lambda item: item[0], reverse=True)
+    combined = "|".join(f"(?:{pattern})" for _, pattern, _, _ in entries)
+    lookup = {
+        _gelar_key(singkatan): kepanjangan
+        for _, _, singkatan, kepanjangan in entries
+    }
+    regex = re.compile(
+        rf"(?<![A-Za-z0-9])(?:{combined})(?![A-Za-z0-9])", re.IGNORECASE
+    )
+    return regex.sub(lambda m: lookup.get(_gelar_key(m.group(0)), m.group(0)), text)
+
+
 def _penerima_phb(items: Any, filters: Any, field: Any = "nama") -> str:
     """Daftar pihak yang cocok dengan filter, memakai nomor urut aslinya.
 
@@ -222,6 +268,13 @@ def list_functions() -> List[dict]:
         {
             "name": "find",
             "description": "Cari object di dalam array object (mis. find(pihak, peran.PENJUAL))",
+            "built_in": True,
+        }
+    )
+    items.append(
+        {
+            "name": "gelar_panjang",
+            "description": "Ganti singkatan gelar dengan kepanjangan dari master Gelar",
             "built_in": True,
         }
     )
@@ -701,6 +754,9 @@ def eval_expr(expr: str, context: Dict[str, Any]) -> Any:
             if len(args) < 2:
                 return None
             return _find(*args[:3])
+        if name == "gelar_panjang":
+            args = _tokens(raw_args, context)
+            return _expand_gelar(args[0] if args else "", context.get("gelar") or {})
         if name == "section_contains":
             return _section_contains(context, _tokens(raw_args, context))
         if name in ("section", "section_short"):

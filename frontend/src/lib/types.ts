@@ -352,6 +352,12 @@ export interface Pekerjaan {
   nama_pekerjaan: string;
 }
 
+export interface Gelar {
+  id: number;
+  singkatan: string;
+  kepanjangan: string;
+}
+
 export interface Uraian {
   id: number;
   nama_uraian: string;

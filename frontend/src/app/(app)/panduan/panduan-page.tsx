@@ -222,6 +222,7 @@ const FUNCTIONS: FunctionItem[] = [
   { name: "terbilang", desc: "Angka menjadi terbilang", example: "{{terbilang(custom.harga_transaksi, 'rupiah')}}" },
   { name: "terbilang_pihak", desc: "Urutan pihak: Pertama, Kedua, Ketiga, Keempat, dst.", example: "{{terbilang_pihak(@number)}}" },
   { name: "eval", desc: "Hitung ekspresi aritmetika dengan variabel", example: "{{eval('custom.harga_transaksi * 0.05')}}" },
+  { name: "gelar_panjang", desc: "Ganti singkatan gelar dengan kepanjangan dari master Gelar", example: "{{gelar_panjang(system.company_name)}}" },
   { name: "find", desc: "Cari object di dalam array object", example: "{{find(pihak, peran.PENJUAL).nama}}" },
   { name: "penerima_phb", desc: "Daftar pihak yang cocok, bernomor sesuai posisi aslinya", example: "{{penerima_phb(peran.PELEPAS, peran.PENERIMA)}}" },
   { name: "terbilang_tanggal", desc: "Tanggal menjadi terbilang", example: "{{terbilang_tanggal(custom.tanggal_akta)}}" },
@@ -1003,6 +1004,37 @@ Pihak Kedua (Budi), Pihak Ketiga (Ani) dan Pihak Kelima (Citra)`}
                 <p>
                   Jika tidak ada yang cocok, hasilnya <code className="font-mono">{'"-"'}</code>{" "}
                   saat dicetak dan bernilai false di <code className="font-mono">#if</code>.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border shadow-none">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-[14.5px]">Gelar panjang — gelar_panjang()</CardTitle>
+              <p className="text-[12px] text-muted-foreground">
+                Mengganti singkatan gelar pada teks dengan kepanjangan dari master
+                Gelar.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 text-[11.5px]">
+{`{{gelar_panjang(system.company_name)}}
+
+NAMA NOTARIS, S.H., M.Kn.
+→ NAMA NOTARIS, Sarjana Hukum, Magister Kenotariatan`}
+              </pre>
+              <div className="space-y-1.5 text-[11.5px] text-muted-foreground">
+                <p>
+                  Data diambil dari menu <b>Data → Gelar</b>. Pencocokan tidak
+                  membedakan huruf besar/kecil dan toleran terhadap titik/spasi,
+                  mis. <code className="font-mono">S.H.</code>,{" "}
+                  <code className="font-mono">SH</code>, atau{" "}
+                  <code className="font-mono">S. H.</code>.
+                </p>
+                <p>
+                  Singkatan yang tidak ada di master dibiarkan apa adanya. Teks kosong
+                  menghasilkan <code className="font-mono">{'"-"'}</code>.
                 </p>
               </div>
             </CardContent>

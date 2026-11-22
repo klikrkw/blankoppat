@@ -129,6 +129,7 @@ export default function DokumenBaruPage() {
   >([]);
   const [itemList, setItemList] = useState<Item[]>([]);
   const [uraianList, setUraianList] = useState<Uraian[]>([]);
+  const [gelarMap, setGelarMap] = useState<Record<string, string>>({});
   const [ektpSearch, setEktpSearch] = useState("");
   const [ektpResults, setEktpResults] = useState<EktpRecord[]>([]);
   const [ektpForPihak, setEktpForPihak] = useState<string | null>(null);
@@ -153,6 +154,14 @@ export default function DokumenBaruPage() {
     api.listPihakRoles().then(setPihakRoles);
     api.listItems("", 1, 1000).then((r) => setItemList(r.data));
     api.listUraian("", 1, 1000).then((r) => setUraianList(r.data));
+    api
+      .listGelar("", 1, 1000)
+      .then((r) =>
+        setGelarMap(
+          Object.fromEntries(r.data.map((g) => [g.singkatan, g.kepanjangan]))
+        )
+      )
+      .catch(() => setGelarMap({}));
     api.listCustomFieldGroups().then((groups) => {
       setFieldGroups(groups);
       const defaults: Record<string, unknown> = {};
@@ -454,6 +463,7 @@ export default function DokumenBaruPage() {
       wilayah: (obyekDetail as Obyek & { wilayah?: unknown })?.wilayah ?? {},
       custom: values,
       uraian: uraianContext,
+      gelar: gelarMap,
       system: {
         company_name: "PPAT & Notaris Ahmad Fauzi, S.H., M.Kn.",
       },
@@ -471,6 +481,7 @@ export default function DokumenBaruPage() {
     pihakList,
     itemList,
     uraianList,
+    gelarMap,
   ]);
 
   const previewDoc = useMemo(() => {

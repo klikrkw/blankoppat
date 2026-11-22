@@ -49,6 +49,7 @@ from ..models import (
     Letak,
     Obyek,
     Pekerjaan,
+    Gelar,
     Provinsi,
     PaymentBankAccount,
     Pihak,
@@ -283,6 +284,19 @@ def _uraian_context(session: Session) -> Dict[str, str]:
                 result.setdefault(slug, isi)
             result[name] = isi
     result["__meta__"] = meta
+    return result
+
+
+def _gelar_context(session: Session) -> Dict[str, str]:
+    """Peta singkatan gelar -> kepanjangan untuk fungsi `gelar_panjang`."""
+    if session is None:
+        return {}
+    result: Dict[str, str] = {}
+    for gelar in session.execute(select(Gelar)).scalars().all():
+        singkatan = (gelar.singkatan or "").strip()
+        kepanjangan = (gelar.kepanjangan or "").strip()
+        if singkatan and kepanjangan:
+            result[singkatan] = kepanjangan
     return result
 
 
@@ -3025,6 +3039,7 @@ def _transaction_context(session: Session, tx: Transaksi, custom_values: Dict[st
         "sections_by_party_short": _sections_by_party(session, tx.id, "short"),
         "custom": custom,
         "uraian": _uraian_context(session),
+        "gelar": _gelar_context(session),
         "staff": _staff_context(session)[0],
         "staff_by_job": _staff_context(session)[1],
         "system": {
@@ -3794,6 +3809,11 @@ class PekerjaanCreate(BaseModel):
     nama_pekerjaan: str
 
 
+class GelarCreate(BaseModel):
+    singkatan: str
+    kepanjangan: str
+
+
 class ObyekCreate(BaseModel):
     jenishak_id: Optional[int] = None
     jenis_sertipikat: str = "manual"
@@ -4008,6 +4028,107 @@ def delete_pekerjaan(
     if not p:
         raise HTTPException(status_code=404, detail="Pekerjaan tidak ditemukan")
     session.delete(p)
+    session.commit()
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Gelar
+# ---------------------------------------------------------------------------
+
+
+def _serialize_gelar(g: Gelar) -> Dict[str, Any]:
+    return {"id": g.id, "singkatan": g.singkatan, "kepanjangan": g.kepanjangan}
+
+
+@router.get("/gelar")
+def list_gelar(
+    search: str = Query(""),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=1000),
+    session: Session = Depends(session_dep),
+    user: dict = Depends(get_current_user),
+):
+    stmt = select(Gelar)
+    if search:
+        like = f"%{search}%"
+        stmt = stmt.where(Gelar.singkatan.like(like) | Gelar.kepanjangan.like(like))
+    total = session.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
+    rows = (
+        session.execute(
+            stmt.order_by(Gelar.singkatan).offset((page - 1) * page_size).limit(page_size)
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "data": [_serialize_gelar(g) for g in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.post("/gelar")
+def create_gelar(
+    body: GelarCreate,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(require_admin),
+):
+    singkatan = body.singkatan.strip()
+    kepanjangan = body.kepanjangan.strip()
+    if not singkatan or not kepanjangan:
+        raise HTTPException(status_code=400, detail="Singkatan dan kepanjangan wajib diisi")
+    duplicate = session.execute(
+        select(Gelar.id).where(func.lower(Gelar.singkatan) == singkatan.lower())
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=400, detail="Singkatan gelar sudah digunakan")
+    gelar = Gelar(singkatan=singkatan, kepanjangan=kepanjangan)
+    session.add(gelar)
+    session.commit()
+    session.refresh(gelar)
+    return _serialize_gelar(gelar)
+
+
+@router.put("/gelar/{id}")
+def update_gelar(
+    id: int,
+    body: GelarCreate,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(require_admin),
+):
+    gelar = session.get(Gelar, id)
+    if not gelar:
+        raise HTTPException(status_code=404, detail="Gelar tidak ditemukan")
+    singkatan = body.singkatan.strip()
+    kepanjangan = body.kepanjangan.strip()
+    if not singkatan or not kepanjangan:
+        raise HTTPException(status_code=400, detail="Singkatan dan kepanjangan wajib diisi")
+    duplicate = session.execute(
+        select(Gelar.id).where(
+            func.lower(Gelar.singkatan) == singkatan.lower(), Gelar.id != id
+        )
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=400, detail="Singkatan gelar sudah digunakan")
+    gelar.singkatan = singkatan
+    gelar.kepanjangan = kepanjangan
+    session.commit()
+    session.refresh(gelar)
+    return _serialize_gelar(gelar)
+
+
+@router.delete("/gelar/{id}")
+def delete_gelar(
+    id: int,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(require_admin),
+):
+    gelar = session.get(Gelar, id)
+    if not gelar:
+        raise HTTPException(status_code=404, detail="Gelar tidak ditemukan")
+    session.delete(gelar)
     session.commit()
     return {"success": True}
 

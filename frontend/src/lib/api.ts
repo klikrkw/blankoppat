@@ -9,6 +9,7 @@ import type {
   DocumentItem,
   EktpRecord,
   FunctionItem,
+  Gelar,
   Invoice,
   Job,
   Staff,
@@ -303,6 +304,33 @@ export const api = {
     return apiFetch(`/api/v1/pekerjaan/${id}`, {
       method: "DELETE",
     });
+  },
+
+  // ---- Gelar ----
+  async listGelar(search = "", page = 1, pageSize = 10) {
+    await delay(80);
+    return apiFetch<{ data: Gelar[]; total: number; page: number; page_size: number }>(
+      "/api/v1/gelar",
+      { query: { search, page, page_size: pageSize } }
+    );
+  },
+
+  async createGelar(data: { singkatan: string; kepanjangan: string }): Promise<Gelar> {
+    await delay(200);
+    return apiFetch<Gelar>("/api/v1/gelar", { method: "POST", json: data });
+  },
+
+  async updateGelar(
+    id: number,
+    data: { singkatan: string; kepanjangan: string }
+  ): Promise<Gelar> {
+    await delay(200);
+    return apiFetch<Gelar>(`/api/v1/gelar/${id}`, { method: "PUT", json: data });
+  },
+
+  async deleteGelar(id: number): Promise<void> {
+    await delay(200);
+    return apiFetch(`/api/v1/gelar/${id}`, { method: "DELETE" });
   },
 
   // ---- Edisi ----

@@ -676,8 +676,7 @@ function penerimaPhb(
   items: unknown,
   filters: unknown,
   field: unknown = "nama"
-): string {
-  if (!Array.isArray(items)) return "";
+): string {  if (!Array.isArray(items)) return "";
   const filterList = isRecord(filters) ? [filters] : filters;
   const key = String(field ?? "nama").trim() || "nama";
   const parts: string[] = [];
@@ -696,6 +695,52 @@ function penerimaPhb(
   if (parts.length === 0) return "";
   if (parts.length === 1) return parts[0];
   return `${parts.slice(0, -1).join(", ")} dan ${parts[parts.length - 1]}`;
+}
+
+function gelarKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function gelarPattern(singkatan: string): string {
+  const letters = Array.from(singkatan).filter((ch) => /[A-Za-z0-9]/.test(ch));
+  if (letters.length === 0) return "";
+  return (
+    letters
+      .map((ch, index) => {
+        const escaped = ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return escaped + (index < letters.length - 1 ? "\\.?\\s*" : "");
+      })
+      .join("") + "\\.?"
+  );
+}
+
+function expandGelar(value: unknown, mapping: unknown): string {
+  const text = value === null || value === undefined ? "" : String(value);
+  if (!text.trim()) return "-";
+  if (!isRecord(mapping)) return text;
+
+  const entries = Object.entries(mapping).flatMap(([singkatan, kepanjangan]) => {
+    const pattern = gelarPattern(singkatan);
+    if (!pattern || kepanjangan === null || kepanjangan === undefined || kepanjangan === "") {
+      return [];
+    }
+    return [{ pattern, singkatan, kepanjangan: String(kepanjangan) }];
+  });
+  if (entries.length === 0) return text;
+
+  entries.sort((a, b) => b.pattern.length - a.pattern.length);
+  const combined = entries.map((entry) => `(?:${entry.pattern})`).join("|");
+  const lookup = new Map(
+    entries.map((entry) => [gelarKey(entry.singkatan), entry.kepanjangan])
+  );
+  const regex = new RegExp(
+    `(^|[^A-Za-z0-9])(?:${combined})(?![A-Za-z0-9])`,
+    "gi"
+  );
+  return text.replace(regex, (match, prefix: string) => {
+    const token = match.slice(prefix.length);
+    return prefix + (lookup.get(gelarKey(token)) ?? token);
+  });
 }
 
 export function evalExpr(
@@ -723,6 +768,9 @@ export function evalExpr(
     }
     if (name === "find") {
       return findObject(args[0], args[1], args[2]);
+    }
+    if (name === "gelar_panjang") {
+      return expandGelar(args[0], ctx.gelar);
     }
     if (name === "section_contains") {
       return sectionExists(ctx, args[0], args[1]);

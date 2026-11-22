@@ -110,6 +110,7 @@ export default function TemplatePage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [testTemplate, setTestTemplate] = useState<TemplateRow | null>(null);
   const [contentCache, setContentCache] = useState<Record<number, string>>({});
+  const [gelarMap, setGelarMap] = useState<Record<string, string>>({});
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<TemplateRow | null>(null);
@@ -154,6 +155,17 @@ export default function TemplatePage() {
   };
 
   useEffect(refresh, []);
+
+  useEffect(() => {
+    api
+      .listGelar("", 1, 1000)
+      .then((r) =>
+        setGelarMap(
+          Object.fromEntries(r.data.map((g) => [g.singkatan, g.kepanjangan]))
+        )
+      )
+      .catch(() => setGelarMap({}));
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -301,6 +313,7 @@ export default function TemplatePage() {
     pembeli: [{ ...ektp[2] }],
     obyek: { ...obyek[0], jenishak: { nama_jenishak: "Hak Milik", singkatan: "HM" }, letak: { nama_desa: "Ngemplak Kidul", kecamatan: "Jepara" } },
     custom: { nomor_akta: "12/2026", tanggal_akta: "2026-10-04", harga_transaksi: 500000000, cara_pembayaran: "Tunai", nama_saksi_1: "Saksi Satu" },
+    gelar: gelarMap,
     system: { company_name: "PPAT & Notaris Ahmad Fauzi, S.H., M.Kn." },
   };
 
