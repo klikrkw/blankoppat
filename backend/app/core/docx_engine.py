@@ -104,12 +104,29 @@ def _expand_with_blocks(root: Any, context: Dict[str, Any]) -> None:
                 continue
 
             target = resolve_path(context, start.group(1))
+            end_text = _paragraph_text(children[end])
+            end_m = WITH_END_RE.search(end_text)
+            end_before = end_text[: end_m.start()].strip() if end_m else ""
+            end_after = end_text[end_m.end() :].strip() if end_m else ""
+
             body_nodes = [copy.deepcopy(n) for n in children[i + 1 : end]]
+            if end_before:
+                clone = copy.deepcopy(children[end])
+                _set_paragraph_text(clone, end_before)
+                body_nodes.append(clone)
+            suffix_node = None
+            if end_after:
+                suffix_node = copy.deepcopy(children[end])
+                _set_paragraph_text(suffix_node, end_after)
+
             insert_at = parent.index(children[i])
             for node in children[i : end + 1]:
                 parent.remove(node)
             if target is None:
                 # Tanpa target: blok dilewati (konsisten dengan template engine teks).
+                if suffix_node is not None:
+                    parent.insert(insert_at, suffix_node)
+                    insert_at += 1
                 children = list(parent)
                 i = insert_at
                 continue
@@ -132,6 +149,9 @@ def _expand_with_blocks(root: Any, context: Dict[str, Any]) -> None:
 
             for node in list(temp):
                 parent.insert(insert_at, node)
+                insert_at += 1
+            if suffix_node is not None:
+                parent.insert(insert_at, suffix_node)
                 insert_at += 1
             children = list(parent)
             i = insert_at
@@ -191,12 +211,34 @@ def _expand_if_blocks(root: Any, context: Dict[str, Any]) -> None:
             else:
                 first, last = end, end
 
+            # Teks pada paragraf penutup sebelum `{{/if}}` masih bagian dari
+            # blok (mis. `{{/each}} {{/if}}`), sedangkan teks setelahnya di luar.
+            end_before = ""
+            end_after = ""
+            end_text = _paragraph_text(children[end])
+            end_m = IF_END_RE.search(end_text)
+            if end_m:
+                end_before = end_text[: end_m.start()].strip()
+                end_after = end_text[end_m.end() :].strip()
+
             selected = [copy.deepcopy(n) for n in children[first:last]]
+            if end_before:
+                clone = copy.deepcopy(children[end])
+                _set_paragraph_text(clone, end_before)
+                selected.append(clone)
+            suffix_node = None
+            if end_after:
+                suffix_node = copy.deepcopy(children[end])
+                _set_paragraph_text(suffix_node, end_after)
+
             for node in children[i : end + 1]:
                 parent.remove(node)
             insert_at = i
             for node in selected:
                 parent.insert(insert_at, node)
+                insert_at += 1
+            if suffix_node is not None:
+                parent.insert(insert_at, suffix_node)
                 insert_at += 1
             children = list(parent)
             i = insert_at
@@ -206,8 +248,26 @@ def _paragraph_text(paragraph: Any) -> str:
     return "".join(node.text or "" for node in _own_t_nodes(paragraph))
 
 
+def _scan_each_block(children: list, start_index: int) -> Optional[int]:
+    """Cari penutup `{{/each}}` yang cocok (nesting-aware)."""
+    depth = 0
+    for j in range(start_index, len(children)):
+        if children[j].tag != TAG_P:
+            continue
+        text = _paragraph_text(children[j])
+        depth += len(EACH_START_RE.findall(text))
+        depth -= len(EACH_END_RE.findall(text))
+        if j == start_index:
+            if depth <= 0:
+                return start_index  # blok inline dalam satu paragraf
+            continue
+        if depth <= 0:
+            return j
+    return None
+
+
 def _expand_each_paragraphs(root: Any, context: Dict[str, Any]) -> None:
-    """Expand `#each` blocks yang tersebar antar paragraf."""
+    """Expand `#each` blocks yang tersebar antar paragraf (mendukung nested)."""
     from .functions import resolve_path
 
     for parent in root.iter():
@@ -222,12 +282,7 @@ def _expand_each_paragraphs(root: Any, context: Dict[str, Any]) -> None:
             if not start:
                 i += 1
                 continue
-            # Cari paragraf penutup `{{/each}}`.
-            end = None
-            for j in range(i, len(children)):
-                if children[j].tag == TAG_P and EACH_END_RE.search(_paragraph_text(children[j])):
-                    end = j
-                    break
+            end = _scan_each_block(children, i)
             if end is None:
                 i += 1
                 continue
@@ -281,6 +336,7 @@ def _expand_each_paragraphs(root: Any, context: Dict[str, Any]) -> None:
                         "index": idx + 1,
                         "@index": idx,
                         "@number": idx + 1,
+                        "@original_number": idx + 1,
                         "this": item,
                     }
                     if alias:
@@ -300,6 +356,7 @@ def _expand_each_paragraphs(root: Any, context: Dict[str, Any]) -> None:
                             "index": idx + 1,
                             "@number": pos + 1,
                             "@index": idx,
+                            "@original_number": idx + 1,
                             "@first": pos == 0,
                             "@last": pos == total - 1,
                             "@count": total,
@@ -307,21 +364,44 @@ def _expand_each_paragraphs(root: Any, context: Dict[str, Any]) -> None:
                     )
 
                     if body_nodes:
-                        # Body antar paragraf: clone per paragraf + patch in-place.
-                        # Struktur run (label, w:tab, tab stop, numbering) dipertahankan.
-                        for b_idx, body in enumerate(body_nodes):
-                            clone = patch_in_place(body, item_context)
-                            if b_idx == 0 and body_inline.strip():
-                                inline_text = render_text(body_inline, item_context)
-                                t_nodes = _own_t_nodes(clone)
+                        # Body antar paragraf: proses blok bersarang lebih dulu
+                        # dengan konteks item (mendukung #each/#if/#with di dalam).
+                        temp = etree.Element("blanko-each-item")
+                        for body in body_nodes:
+                            temp.append(copy.deepcopy(body))
+                        for _ in range(4):
+                            before = etree.tostring(temp)
+                            _expand_with_blocks(temp, item_context)
+                            # `#each` harus diproses sebelum `#if` agar kondisi
+                            # seperti `@count`/`@number` memakai nilai loop
+                            # yang benar, termasuk pada loop bersarang.
+                            _expand_each_paragraphs(temp, item_context)
+                            _expand_if_blocks(temp, item_context)
+                            if etree.tostring(temp) == before:
+                                break
+                        for paragraph in temp.iter(TAG_P):
+                            _expand_same_paragraph_blocks(paragraph, item_context)
+                            _patch_paragraph(_own_t_nodes(paragraph), item_context)
+                            _normalize_paragraph_inline(paragraph)
+                        item_nodes = list(temp)
+                        if item_nodes and body_inline.strip():
+                            inline_text = render_text(body_inline, item_context)
+                            first_para = next(item_nodes[0].iter(TAG_P), None)
+                            if first_para is not None:
+                                t_nodes = _own_t_nodes(first_para)
                                 if t_nodes:
                                     t_nodes[0].text = inline_text + (t_nodes[0].text or "")
-                            if b_idx == len(body_nodes) - 1 and before_end.strip():
-                                end_text = render_text(before_end, item_context)
-                                t_nodes = _own_t_nodes(clone)
+                        if item_nodes and before_end.strip():
+                            end_text = render_text(before_end, item_context)
+                            last_para = None
+                            for p in item_nodes[-1].iter(TAG_P):
+                                last_para = p
+                            if last_para is not None:
+                                t_nodes = _own_t_nodes(last_para)
                                 if t_nodes:
                                     t_nodes[-1].text = (t_nodes[-1].text or "") + end_text
-                            parent.insert(insert_at, clone)
+                        for node in item_nodes:
+                            parent.insert(insert_at, node)
                             insert_at += 1
                     else:
                         # Body inline pada paragraf start/end — fallback render teks.
@@ -696,19 +776,22 @@ def _same_paragraph_span(text: str, body_start: int, kind: str) -> tuple[int, in
 def _top_level_else(body: str) -> int:
     depth = 0
     position = 0
+    # Cocokkan seluruh tag agar `#if` dengan argumen (mis. `@count>1`)
+    # tetap dihitung sebagai blok bersarang.
+    tag_re = re.compile(r"\{\{([\s\S]*?)\}\}")
     while position < len(body):
-        token = re.search(r"\{\{\s*(#if\b|/if\b|endif\b|else\b)\s*\}\}?", body[position:])
+        token = tag_re.search(body, position)
         if not token:
             return -1
-        absolute = position + token.start()
-        tag = token.group(1).lower()
-        if tag.startswith("#if"):
+        tag = token.group(1).strip()
+        position = token.end()
+        if re.match(r"(?i)^#?if\b", tag):
             depth += 1
-        elif tag.startswith("/"):
+        elif re.match(r"(?i)^(/if|endif)\b", tag):
             depth -= 1
-        elif depth == 0:
-            return absolute
-        position += token.end()
+        elif re.match(r"(?i)^else\b", tag):
+            if depth == 0:
+                return token.start()
     return -1
 
 
@@ -759,7 +842,7 @@ def _expand_same_paragraph_blocks(paragraph: Any, context: Dict[str, Any]) -> bo
 
                 prepared = []
                 for index, item in enumerate(items):
-                    merged = {**context, "index": index + 1, "@index": index, "@number": index + 1, "this": item}
+                    merged = {**context, "index": index + 1, "@index": index, "@number": index + 1, "@original_number": index + 1, "this": item}
                     if alias:
                         merged[alias] = item
                     if isinstance(item, dict):
@@ -866,8 +949,10 @@ def _patch_xml_text(xml_bytes: bytes, context: Dict[str, Any]) -> bytes:
     for _ in range(3):
         before = etree.tostring(root)
         _expand_with_blocks(root, context)
-        _expand_if_blocks(root, context)
+        # Proses loop sebelum kondisi agar `@count`/`@number` dari `#each`
+        # (termasuk nested) sudah tersedia saat `#if` dievaluasi.
         _expand_each_paragraphs(root, context)
+        _expand_if_blocks(root, context)
         if etree.tostring(root) == before:
             break
     changed = etree.tostring(root) != original

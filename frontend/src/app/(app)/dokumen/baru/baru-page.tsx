@@ -78,6 +78,7 @@ interface PihakDraft {
   id: string;
   roles: PihakRole[];
   ektp: EktpRecord[];
+  parent: string | null;
 }
 
 interface GeneratedDoc {
@@ -113,14 +114,15 @@ export default function DokumenBaruPage() {
   const [obyekDetail, setObyekDetail] = useState<Obyek | null>(null);
 
   const [pihakList, setPihakList] = useState<PihakDraft[]>([
-    { id: "p1", roles: [{ role: "PELEPAS", sebutan: "PELEPAS HAK" }], ektp: [] },
-    { id: "p2", roles: [{ role: "PENERIMA", sebutan: "PENERIMA HAK" }], ektp: [] },
+    { id: "p1", roles: [{ role: "PELEPAS", sebutan: "PELEPAS HAK" }], ektp: [], parent: null },
+    { id: "p2", roles: [{ role: "PENERIMA", sebutan: "PENERIMA HAK" }], ektp: [], parent: null },
   ]);
   const [pihakRoles, setPihakRoles] = useState<{ id: number; role: string; sebutan: string }[]>([]);
   const [sections, setSections] = useState<
     {
       item_id: number | null;
       uraian_id: number | null;
+      pihak: string | null;
       detail: string;
       short_text: string;
     }[]
@@ -189,8 +191,8 @@ export default function DokumenBaruPage() {
     setObyekSearch("");
     setObyekList([]);
     setPihakList([
-      { id: "p1", roles: [{ role: "PELEPAS", sebutan: "PELEPAS HAK" }], ektp: [] },
-      { id: "p2", roles: [{ role: "PENERIMA", sebutan: "PENERIMA HAK" }], ektp: [] },
+      { id: "p1", roles: [{ role: "PELEPAS", sebutan: "PELEPAS HAK" }], ektp: [], parent: null },
+      { id: "p2", roles: [{ role: "PENERIMA", sebutan: "PENERIMA HAK" }], ektp: [], parent: null },
     ]);
     setSections([]);
     setEktpSearch("");
@@ -296,11 +298,79 @@ export default function DokumenBaruPage() {
     .flatMap((p) => p.ektp);
 
   const peranContext = useMemo(() => {
-    const map: Record<string, EktpRecord[]> = {};
+    const map: Record<string, Record<string, unknown>[]> = {};
+
+    // Child = daftar ORANG (satu e-KTP satu entri), sama seperti backend.
+    const childPersons = (
+      draft: PihakDraft,
+      depth = 0,
+      visited: Set<string> = new Set()
+    ): Record<string, unknown>[] => {
+      if (depth >= 5) return [];
+      const seen = new Set(visited).add(draft.id);
+      const result: Record<string, unknown>[] = [];
+      const index = new Map<number, Record<string, unknown>>();
+      for (const child of pihakList.filter((x) => x.parent === draft.id && !seen.has(x.id))) {
+        const role = child.roles[0]?.role ?? "";
+        const sebutan = child.roles[0]?.sebutan ?? "";
+        for (const e of child.ektp) {
+          const existing = index.get(e.id);
+          if (existing) {
+            const roles = existing.roles as string[];
+            if (!roles.includes(role)) roles.push(role);
+            continue;
+          }
+          const entry: Record<string, unknown> = {
+            ...e,
+            role,
+            sebutan,
+            party_id: child.id,
+            roles: [role],
+            persons: child.ektp,
+          };
+          const kids = childPersons(child, depth + 1, seen);
+          if (kids.length) entry.children = kids;
+          index.set(e.id, entry);
+          result.push(entry);
+        }
+      }
+      return result;
+    };
+
+    const summary = (
+      draft: PihakDraft,
+      depth = 0,
+      visited: Set<string> = new Set()
+    ): Record<string, unknown> => {
+      const first = draft.ektp[0] ?? ({} as EktpRecord);
+      const obj: Record<string, unknown> = {
+        ...first,
+        party_id: draft.id,
+        role: draft.roles[0]?.role ?? "",
+        sebutan: draft.roles[0]?.sebutan ?? "",
+        persons: draft.ektp,
+      };
+      if (depth >= 5) return obj;
+      const seen = new Set(visited).add(draft.id);
+      const kids = childPersons(draft, depth + 1, seen);
+      if (kids.length) obj.children = kids;
+      const parent = draft.parent ? pihakList.find((x) => x.id === draft.parent) : undefined;
+      if (parent && !seen.has(parent.id)) obj.parent = summary(parent, depth + 1, seen);
+      return obj;
+    };
     for (const p of pihakList) {
+      const parent = p.parent ? pihakList.find((x) => x.id === p.parent) : undefined;
+      const parentObj = parent ? summary(parent) : {};
+      const childrenObj = childPersons(p);
       for (const r of p.roles) {
         for (const e of p.ektp) {
-          (map[r.role] ||= []).push(e);
+          (map[r.role] ||= []).push({
+            ...e,
+            role: r.role,
+            sebutan: r.sebutan,
+            parent: parentObj,
+            children: childrenObj,
+          });
         }
       }
     }
@@ -327,6 +397,42 @@ export default function DokumenBaruPage() {
   const previewContext = useMemo(() => {
     const values = { ...customValues };
     Object.assign(values, { nomor_akta: txForm.nomor_transaksi, tanggal_akta: txForm.tanggal_transaksi });
+    const sectionRows = sections
+      .filter((sec) => sec.item_id)
+      .map((sec) => {
+        const party = sec.pihak ? pihakList.find((x) => x.id === sec.pihak) : undefined;
+        return {
+          item_id: sec.item_id,
+          nama_item: itemList.find((i) => i.id === sec.item_id)?.nama_item ?? "",
+          uraian_id: sec.uraian_id,
+          nama_uraian: uraianList.find((u) => u.id === sec.uraian_id)?.nama_uraian ?? "",
+          pihak_id: sec.pihak,
+          nama_pihak: party?.roles[0]?.role ?? "",
+          detail: sec.detail,
+          short_text: sec.short_text,
+        };
+      });
+    const byName: Record<string, string> = {};
+    const byNameShort: Record<string, string> = {};
+    const byParty: Record<string, Record<string, string>> = {};
+    const byPartyShort: Record<string, Record<string, string>> = {};
+    for (const row of sectionRows) {
+      if (!row.nama_item) continue;
+      if (!row.pihak_id) {
+        byName[row.nama_item] = row.detail;
+        byNameShort[row.nama_item] = row.short_text || row.detail;
+      }
+      const role = (row.nama_pihak || "").trim();
+      if (!role) continue;
+      const slug = role
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+      for (const key of [role, slug]) {
+        (byParty[key] ||= {})[row.nama_item] = row.detail;
+        (byPartyShort[key] ||= {})[row.nama_item] = row.short_text || row.detail;
+      }
+    }
     return {
       transaksi: txForm,
       peran: peranContext,
@@ -337,23 +443,11 @@ export default function DokumenBaruPage() {
       penjual,
       pembeli,
       saksi,
-      sections: sections
-        .filter((sec) => sec.item_id)
-        .map((sec) => ({
-          item_id: sec.item_id,
-          nama_item: itemList.find((i) => i.id === sec.item_id)?.nama_item ?? "",
-          uraian_id: sec.uraian_id,
-          nama_uraian: uraianList.find((u) => u.id === sec.uraian_id)?.nama_uraian ?? "",
-          detail: sec.detail,
-        })),
-      sections_by_name: Object.fromEntries(
-        sections
-          .filter((sec) => sec.item_id)
-          .map((sec) => [
-            itemList.find((i) => i.id === sec.item_id)?.nama_item ?? "",
-            sec.detail,
-          ])
-      ),
+      sections: sectionRows,
+      sections_by_name: byName,
+      sections_by_name_short: byNameShort,
+      sections_by_party: byParty,
+      sections_by_party_short: byPartyShort,
       obyek: obyekDetail ?? {},
       jenishak: (obyekDetail as Obyek & { jenishak?: unknown })?.jenishak ?? {},
       letak: (obyekDetail as Obyek & { wilayah?: unknown })?.wilayah ?? {},
@@ -364,7 +458,20 @@ export default function DokumenBaruPage() {
         company_name: "PPAT & Notaris Ahmad Fauzi, S.H., M.Kn.",
       },
     };
-  }, [customValues, txForm, penjual, pembeli, saksi, obyekDetail, peranContext, uraianContext]);
+  }, [
+    customValues,
+    txForm,
+    penjual,
+    pembeli,
+    saksi,
+    obyekDetail,
+    peranContext,
+    uraianContext,
+    sections,
+    pihakList,
+    itemList,
+    uraianList,
+  ]);
 
   const previewDoc = useMemo(() => {
     const suratId = selectedSurat[0];
@@ -462,7 +569,7 @@ export default function DokumenBaruPage() {
   const addSection = () =>
     setSections((list) => [
       ...list,
-      { item_id: null, uraian_id: null, detail: "", short_text: "" },
+      { item_id: null, uraian_id: null, pihak: null, detail: "", short_text: "" },
     ]);
 
   const updateSection = (
@@ -470,6 +577,7 @@ export default function DokumenBaruPage() {
     patch: Partial<{
       item_id: number | null;
       uraian_id: number | null;
+      pihak: string | null;
       detail: string;
       short_text: string;
     }>
@@ -479,12 +587,36 @@ export default function DokumenBaruPage() {
   const addPihak = () => {
     setPihakList((p) => [
       ...p,
-      { id: `p${Date.now()}`, roles: [{ role: "SAKSI", sebutan: "SAKSI" }], ektp: [] },
+      { id: `p${Date.now()}`, roles: [{ role: "SAKSI", sebutan: "SAKSI" }], ektp: [], parent: null },
     ]);
   };
 
   const removePihak = (id: string) => {
-    setPihakList((p) => p.filter((x) => x.id !== id));
+    setPihakList((p) =>
+      p.filter((x) => x.id !== id).map((x) => (x.parent === id ? { ...x, parent: null } : x))
+    );
+  };
+
+  const partyLabel = (p: PihakDraft) =>
+    `${p.roles.map((r) => r.role).join("/") || "Pihak"}${
+      p.ektp[0] ? ` — ${p.ektp[0].nama}` : ""
+    }`;
+
+  const isPartyDescendant = (candidateId: string, partyId: string): boolean => {
+    const seen = new Set<string>();
+    let current = pihakList.find((x) => x.id === candidateId);
+    while (current?.parent) {
+      if (current.parent === partyId) return true;
+      if (seen.has(current.id)) break;
+      seen.add(current.id);
+      current = pihakList.find((x) => x.id === current!.parent);
+    }
+    return false;
+  };
+
+  const firstRoleKey = (draftId: string) => {
+    const draft = pihakList.find((x) => x.id === draftId);
+    return draft && draft.roles[0] ? `${draft.id}:0` : "";
   };
 
   const addEktpToPihak = (pihakId: string, record: EktpRecord) => {
@@ -511,19 +643,23 @@ export default function DokumenBaruPage() {
         nomor_transaksi: txForm.nomor_transaksi,
         pihak: pihakList
           .filter((p) => p.ektp.length > 0)
-          .flatMap((p) =>
-            p.roles.map((r) => ({
+          .flatMap((p) => {
+            const parentKey = p.parent ? firstRoleKey(p.parent) : "";
+            return p.roles.map((r, ri) => ({
               role: r.role,
               sebutan: r.sebutan,
               pihak_role_id: r.pihak_role_id,
               ektp_ids: p.ektp.map((e) => e.id),
-            }))
-          ),
+              key: `${p.id}:${ri}`,
+              parent_key: parentKey,
+            }));
+          }),
         sections: sections
           .filter((sec) => sec.item_id)
           .map((sec) => ({
             item_id: sec.item_id as number,
             uraian_id: sec.uraian_id,
+            pihak_key: sec.pihak ? `${sec.pihak}:0` : "",
             detail: sec.detail,
             short_text: sec.short_text,
           })),
@@ -836,6 +972,43 @@ export default function DokumenBaruPage() {
                   </Button>
                 </div>
 
+                <div className="mt-3 max-w-md space-y-1.5">
+                  <Label className="text-[12px]">Induk Pihak (parent)</Label>
+                  <Select
+                    value={p.parent ?? "none"}
+                    onValueChange={(v) =>
+                      setPihakList((list) =>
+                        list.map((x) =>
+                          x.id === p.id ? { ...x, parent: v === "none" ? null : v } : x
+                        )
+                      )
+                    }
+                  >
+                    <SelectTrigger className="h-8 text-[12.5px]">
+                      <SelectValue placeholder="Tanpa induk" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Tanpa induk</SelectItem>
+                      {pihakList
+                        .filter(
+                          (x) =>
+                            x.id !== p.id &&
+                            x.ektp.length > 0 &&
+                            !isPartyDescendant(x.id, p.id)
+                        )
+                        .map((x) => (
+                          <SelectItem key={x.id} value={x.id}>
+                            {partyLabel(x)}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    Child dipanggil di template lewat {`{{children}}`}, parent lewat{" "}
+                    {`{{parent}}`}.
+                  </p>
+                </div>
+
                 {p.ektp.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {p.ektp.map((e) => (
@@ -985,6 +1158,34 @@ export default function DokumenBaruPage() {
                     </Select>
                   </div>
                 </div>
+                <div className="space-y-1.5">
+                  <Label>Pihak (untuk section per pihak)</Label>
+                  <Select
+                    value={sec.pihak ?? "none"}
+                    onValueChange={(v) =>
+                      updateSection(index, { pihak: v === "none" ? null : v })
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Tanpa pihak (umum)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Tanpa pihak (umum)</SelectItem>
+                      {pihakList
+                        .filter((x) => x.ektp.length > 0)
+                        .map((x) => (
+                          <SelectItem key={x.id} value={x.id}>
+                            {partyLabel(x)}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    Dipanggil di template: {`{{section('Nama Item', 'ROLE')}}`} atau{" "}
+                    {`{{section('Nama Item', p)}}`}.
+                  </p>
+                </div>
+
                 <div className="space-y-1.5">
                   <Label>Short Text</Label>
                   <Textarea

@@ -796,7 +796,15 @@ export const api = {
     judul: string;
     status: string;
     keterangan: string;
-    pihak: { id: string; role: string; sebutan: string; pihak_role_id?: number | null; urutan: number; ektp: EktpRecord[] }[];
+    pihak: {
+      id: string;
+      role: string;
+      sebutan: string;
+      pihak_role_id?: number | null;
+      parent_id?: string | null;
+      urutan: number;
+      ektp: EktpRecord[];
+    }[];
     sections?: SectionItem[];
     surat_ids: string[];
     custom_fields: Record<string, unknown>;
@@ -813,8 +821,22 @@ export const api = {
       obyek_id: number | null;
       keterangan: string;
       nomor_transaksi: string;
-      pihak: { role: string; sebutan: string; pihak_role_id?: number; ektp_ids: number[] }[];
-      sections?: { item_id: number; uraian_id?: number | null; detail: string; short_text?: string }[];
+      pihak: {
+        role: string;
+        sebutan: string;
+        pihak_role_id?: number;
+        ektp_ids: number[];
+        key?: string;
+        parent_key?: string;
+      }[];
+      sections?: {
+        item_id: number;
+        uraian_id?: number | null;
+        pihak_id?: string | null;
+        pihak_key?: string;
+        detail: string;
+        short_text?: string;
+      }[];
       surat_ids: string[];
       custom_fields: Record<string, unknown>;
     }
@@ -834,12 +856,15 @@ export const api = {
           sebutan_pihak: p.sebutan,
           pihak_role_id: p.pihak_role_id,
           ektp_ids: p.ektp_ids,
+          key: p.key,
+          parent_key: p.parent_key ?? "",
         })),
         ...(input.sections
           ? {
               sections: input.sections.map((sec) => ({
                 item_id: sec.item_id,
                 uraian_id: sec.uraian_id ?? null,
+                pihak_key: sec.pihak_key ?? "",
                 detail: sec.detail,
                 short_text: sec.short_text ?? "",
               })),
@@ -858,8 +883,22 @@ export const api = {
     obyek_id: number | null;
     keterangan: string;
     nomor_transaksi: string;
-    pihak: { role: string; sebutan: string; pihak_role_id?: number; ektp_ids: number[] }[];
-    sections?: { item_id: number; uraian_id?: number | null; detail: string; short_text?: string }[];
+    pihak: {
+      role: string;
+      sebutan: string;
+      pihak_role_id?: number;
+      ektp_ids: number[];
+      key?: string;
+      parent_key?: string;
+    }[];
+    sections?: {
+        item_id: number;
+        uraian_id?: number | null;
+        pihak_id?: string | null;
+        pihak_key?: string;
+        detail: string;
+        short_text?: string;
+      }[];
   }): Promise<Transaksi> {
     await delay(350);
     return apiFetch<Transaksi>("/api/v1/transaksi", {
@@ -876,10 +915,13 @@ export const api = {
           sebutan_pihak: p.sebutan,
           pihak_role_id: p.pihak_role_id,
           ektp_ids: p.ektp_ids,
+          key: p.key,
+          parent_key: p.parent_key ?? "",
         })),
         sections: (input.sections ?? []).map((sec) => ({
           item_id: sec.item_id,
           uraian_id: sec.uraian_id ?? null,
+          pihak_key: sec.pihak_key ?? "",
           detail: sec.detail,
           short_text: sec.short_text ?? "",
         })),

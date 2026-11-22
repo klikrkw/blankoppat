@@ -95,6 +95,27 @@ export function terbilang(value: number | string, satuan?: string): string {
   return out;
 }
 
+export function terbilangPihak(value: unknown): string {
+  let num: number;
+  if (typeof value === "number") {
+    num = value;
+  } else if (typeof value === "string") {
+    const text = value.trim();
+    if (!text) return "-";
+    num = Number(text.replace(/\./g, "").replace(",", "."));
+  } else {
+    return "-";
+  }
+  if (!Number.isFinite(num) || !Number.isInteger(num) || num < 1) return "-";
+  if (num === 1) return "Pertama";
+
+  let words = terbilang(num).toLowerCase();
+  // "satu juta" -> "sejuta" agar menjadi "Kesejuta".
+  if (words.startsWith("satu ")) words = `se${words.slice("satu ".length)}`;
+  const hasil = `ke${words}`;
+  return hasil.charAt(0).toUpperCase() + hasil.slice(1);
+}
+
 function parseDate(value: string | Date): Date | null {
   if (value instanceof Date) return value;
   if (!value) return null;
@@ -225,15 +246,490 @@ function evalArg(
   return resolvePath(ctx, a);
 }
 
+function lookupSection(
+  ctx: Record<string, unknown>,
+  itemName: unknown,
+  party: unknown,
+  shortMode: boolean
+): unknown {
+  const key = String(itemName ?? "").trim();
+  if (!key) return undefined;
+  let role = "";
+  let partyId = "";
+  if (party && typeof party === "object") {
+    const obj = party as Record<string, unknown>;
+    role = String(obj.role ?? obj.nama_pihak ?? "").trim();
+    partyId = String(obj.party_id ?? obj.pihak_id ?? "");
+  } else if (party !== undefined && party !== null) {
+    role = String(party).trim();
+  }
+  const rows = Array.isArray(ctx.sections)
+    ? (ctx.sections as Record<string, unknown>[])
+    : [];
+  const applyParty = (value: unknown): unknown => {
+    if (
+      party &&
+      typeof party === "object" &&
+      typeof value === "string" &&
+      value &&
+      !value.includes("section(")
+    ) {
+      return renderBlocks(value, {
+        ...ctx,
+        ...(party as Record<string, unknown>),
+        p: party,
+      });
+    }
+    return value;
+  };
+
+  if (partyId) {
+    const row = rows.find(
+      (r) =>
+        String(r.pihak_id ?? r.party_id ?? "") === partyId &&
+        String(r.nama_item ?? "").trim().toLowerCase() === key.toLowerCase()
+    );
+    if (row) {
+      return applyParty(shortMode ? row.short_text || row.detail || "" : row.detail || "");
+    }
+  }
+
+  const partyMap = (
+    shortMode ? ctx.sections_by_party_short : ctx.sections_by_party
+  ) as Record<string, Record<string, string>> | undefined;
+  if (role && partyMap) {
+    const slug = role.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    const bucket = partyMap[role] ?? partyMap[slug];
+    if (bucket) {
+      if (bucket[key] !== undefined) return applyParty(bucket[key]);
+      const hit = Object.entries(bucket).find(
+        ([k]) => k.trim().toLowerCase() === key.toLowerCase()
+      );
+      if (hit) return applyParty(hit[1]);
+    }
+  }
+
+  const general = (
+    shortMode ? ctx.sections_by_name_short : ctx.sections_by_name
+  ) as Record<string, string> | undefined;
+  if (general) {
+    const hit = Object.entries(general).find(
+      ([k]) => k.trim().toLowerCase() === key.toLowerCase()
+    );
+    if (hit) return applyParty(hit[1]);
+  }
+
+  const matches = rows.filter(
+    (r) => String(r.nama_item ?? "").trim().toLowerCase() === key.toLowerCase()
+  );
+  if (matches.length) {
+    const row = matches[0];
+    return applyParty(shortMode ? row.short_text || row.detail || "" : row.detail || "");
+  }
+  return undefined;
+}
+
+type CalcToken = {
+  type: "num" | "id" | "op" | "lparen" | "rparen" | "comma";
+  value: string;
+};
+
+function tokenizeCalc(expr: string): CalcToken[] {
+  const tokens: CalcToken[] = [];
+  let i = 0;
+  while (i < expr.length) {
+    const ch = expr[i];
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+    if (ch === "(" || ch === ")" || ch === ",") {
+      tokens.push({
+        type: ch === "(" ? "lparen" : ch === ")" ? "rparen" : "comma",
+        value: ch,
+      });
+      i++;
+      continue;
+    }
+    if ("+-*/%".includes(ch)) {
+      if (ch === "*" && expr[i + 1] === "*") {
+        tokens.push({ type: "op", value: "**" });
+        i += 2;
+      } else {
+        tokens.push({ type: "op", value: ch });
+        i++;
+      }
+      continue;
+    }
+    if (/[0-9]/.test(ch)) {
+      let j = i;
+      while (j < expr.length && /[0-9.]/.test(expr[j])) j++;
+      const raw = expr.slice(i, j);
+      if (!/^\d+(?:\.\d+)?$/.test(raw)) throw new Error("angka tidak valid");
+      tokens.push({ type: "num", value: raw });
+      i = j;
+      continue;
+    }
+    if (/[A-Za-z_@$]/.test(ch)) {
+      let j = i + 1;
+      while (j < expr.length && /[\w.\[\]@$]/.test(expr[j])) j++;
+      tokens.push({ type: "id", value: expr.slice(i, j) });
+      i = j;
+      continue;
+    }
+    throw new Error("karakter tidak didukung");
+  }
+  return tokens;
+}
+
+function calcToNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    let text = value.trim();
+    if (!text) throw new Error("bukan angka");
+    if (text.includes(",")) {
+      text = text.replace(/\./g, "").replace(",", ".");
+    } else if (/^-?\d{1,3}(?:\.\d{3})+$/.test(text)) {
+      // "1.000" / "1.234.567" -> pemisah ribuan Indonesia.
+      text = text.replace(/\./g, "");
+    }
+    const num = Number(text);
+    if (Number.isFinite(num)) return num;
+  }
+  throw new Error("bukan angka");
+}
+
+function evaluateCalc(expr: string, ctx: Record<string, unknown>): number {
+  const tokens = tokenizeCalc(expr);
+  let pos = 0;
+  const peek = () => tokens[pos];
+  const take = () => tokens[pos++];
+
+  function primary(): number {
+    const token = take();
+    if (!token) throw new Error("ekspresi kosong");
+    if (token.type === "num") return Number(token.value);
+    if (token.type === "lparen") {
+      const value = expression();
+      if (take()?.type !== "rparen") throw new Error("kurung tidak lengkap");
+      return value;
+    }
+    if (token.type === "id") {
+      if (peek()?.type === "lparen") {
+        take();
+        const args: number[] = [];
+        if (peek()?.type !== "rparen") {
+          args.push(expression());
+          while (peek()?.type === "comma") {
+            take();
+            args.push(expression());
+          }
+        }
+        if (take()?.type !== "rparen") throw new Error("argumen tidak lengkap");
+        switch (token.value) {
+          case "min":
+            return Math.min(...args);
+          case "max":
+            return Math.max(...args);
+          case "abs":
+            if (args.length !== 1) throw new Error("abs butuh 1 argumen");
+            return Math.abs(args[0]);
+          case "round": {
+            if (args.length === 1) return Math.round(args[0]);
+            if (args.length === 2) {
+              const factor = Math.pow(10, Math.trunc(args[1]));
+              return Math.round(args[0] * factor) / factor;
+            }
+            throw new Error("round butuh 1 atau 2 argumen");
+          }
+          default:
+            throw new Error("fungsi tidak didukung");
+        }
+      }
+      return calcToNumber(resolvePath(ctx, token.value));
+    }
+    throw new Error("token tidak didukung");
+  }
+
+  function power(): number {
+    const base = primary();
+    if (peek()?.type === "op" && peek()?.value === "**") {
+      take();
+      const exponent = unary();
+      if (Math.abs(exponent) > 1000) throw new Error("eksponen terlalu besar");
+      return Math.pow(base, exponent);
+    }
+    return base;
+  }
+
+  function unary(): number {
+    const token = peek();
+    if (token?.type === "op" && (token.value === "+" || token.value === "-")) {
+      take();
+      const value = unary();
+      return token.value === "-" ? -value : value;
+    }
+    return power();
+  }
+
+  function term(): number {
+    let value = unary();
+    while (peek()?.type === "op" && ["*", "/", "%"].includes(peek()!.value)) {
+      const op = take()!.value;
+      const right = unary();
+      if (op === "*") value *= right;
+      else if (op === "/") value /= right;
+      else value %= right;
+    }
+    return value;
+  }
+
+  function expression(): number {
+    let value = term();
+    while (peek()?.type === "op" && ["+", "-"].includes(peek()!.value)) {
+      const op = take()!.value;
+      const right = term();
+      value = op === "+" ? value + right : value - right;
+    }
+    return value;
+  }
+
+  const result = expression();
+  if (pos !== tokens.length) throw new Error("ekspresi tidak lengkap");
+  if (!Number.isFinite(result)) throw new Error("hasil tidak valid");
+  const rounded = Math.round(result);
+  if (Math.abs(result - rounded) < 1e-9) return rounded;
+  return Number(result.toFixed(10));
+}
+
+function evalCalculation(raw: string, ctx: Record<string, unknown>): string | number {
+  let expr = raw.trim();
+  const quotePairs: Record<string, string> = {
+    "'": "'",
+    '"': '"',
+    "\u2018": "\u2019",
+    "\u201c": "\u201d",
+  };
+  if (expr.length >= 2 && quotePairs[expr[0]] === expr[expr.length - 1]) {
+    expr = expr.slice(1, -1).trim();
+  }
+  if (!expr) return "-";
+  try {
+    return evaluateCalc(expr, ctx);
+  } catch {
+    return "-";
+  }
+}
+
+function sectionExists(
+  ctx: Record<string, unknown>,
+  itemName: unknown,
+  party?: unknown
+): boolean {  const key = String(itemName ?? "").trim().toLowerCase();
+  if (!key) return false;
+  const rows = Array.isArray(ctx.sections)
+    ? (ctx.sections as Record<string, unknown>[])
+    : [];
+  const matches = rows.filter(
+    (r) => String(r.nama_item ?? "").trim().toLowerCase() === key
+  );
+  const hasParty = party !== undefined && party !== null && party !== "";
+
+  if (hasParty) {
+    let role = "";
+    let partyId = "";
+    if (typeof party === "object") {
+      const obj = party as Record<string, unknown>;
+      role = String(obj.role ?? obj.nama_pihak ?? "").trim();
+      partyId = String(obj.party_id ?? obj.pihak_id ?? "");
+    } else {
+      role = String(party).trim();
+    }
+    if (
+      matches.some((r) => {
+        if (partyId) return String(r.pihak_id ?? r.party_id ?? "") === partyId;
+        if (role) {
+          return (
+            String(r.nama_pihak ?? r.role ?? "").trim().toLowerCase() ===
+            role.toLowerCase()
+          );
+        }
+        return true;
+      })
+    ) {
+      return true;
+    }
+    if (role) {
+      const partyMap =
+        (ctx.sections_by_party as
+          | Record<string, Record<string, string>>
+          | undefined) ?? {};
+      const slug = role
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+      const bucket = partyMap[role] ?? partyMap[slug];
+      if (
+        bucket &&
+        Object.keys(bucket).some((k) => k.trim().toLowerCase() === key)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (matches.length > 0) return true;
+  const general = ctx.sections_by_name as Record<string, string> | undefined;
+  return Boolean(
+    general &&
+      Object.keys(general).some((k) => k.trim().toLowerCase() === key)
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function calcMatchValue(a: unknown, b: unknown): boolean {
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  if (a === b) return true;
+  if (typeof a === "string" && typeof b === "string") {
+    return a.trim().toLowerCase() === b.trim().toLowerCase();
+  }
+  return String(a) === String(b);
+}
+
+function findIdentity(
+  needle: Record<string, unknown>,
+  item: Record<string, unknown>
+): boolean {
+  const pairs: [string, string][] = [
+    ["party_id", "party_id"],
+    ["party_id", "pihak_id"],
+    ["pihak_id", "pihak_id"],
+    ["pihak_id", "party_id"],
+    ["nik", "nik"],
+    ["ektp_id", "ektp_id"],
+    ["id", "id"],
+  ];
+  for (const [needleKey, itemKey] of pairs) {
+    const needleValue = needle[needleKey];
+    if (needleValue === null || needleValue === undefined || needleValue === "") {
+      continue;
+    }
+    const itemValue = item[itemKey];
+    if (itemValue === null || itemValue === undefined || itemValue === "") {
+      continue;
+    }
+    if (calcMatchValue(needleValue, itemValue)) return true;
+  }
+  return false;
+}
+
+function findObject(first: unknown, second: unknown, third?: unknown): unknown {  if (Array.isArray(first) && typeof second === "string" && third !== undefined && third !== "") {
+    return first
+      .filter(isRecord)
+      .find((item) => calcMatchValue(third, item[second]));
+  }
+
+  let needle = first;
+  let haystack = second;
+  if (Array.isArray(needle) && isRecord(haystack)) {
+    [needle, haystack] = [haystack, needle];
+  }
+  if (isRecord(haystack)) haystack = Object.values(haystack);
+  if (!Array.isArray(haystack)) return undefined;
+  const items = haystack.filter(isRecord);
+
+  if (isRecord(needle)) {
+    const byIdentity = items.find((item) => findIdentity(needle, item));
+    if (byIdentity) return byIdentity;
+    const criteria = Object.entries(needle).filter(
+      ([, value]) =>
+        value !== null &&
+        value !== undefined &&
+        value !== "" &&
+        !(Array.isArray(value) && value.length === 0) &&
+        !(isRecord(value) && Object.keys(value).length === 0)
+    );
+    if (criteria.length > 0) {
+      const match = items.find((item) =>
+        criteria.every(([key, value]) => calcMatchValue(value, item[key]))
+      );
+      if (match) return match;
+    }
+    return items.find((item) => item === needle);
+  }
+
+  if (needle === null || needle === undefined || needle === "") return undefined;
+  for (const key of ["party_id", "pihak_id", "id", "ektp_id", "nik", "nama", "name", "email"]) {
+    const match = items.find((item) => calcMatchValue(needle, item[key]));
+    if (match) return match;
+  }
+  return items.find((item) =>
+    Object.values(item).some((value) => calcMatchValue(needle, value))
+  );
+}
+
+function penerimaPhb(
+  items: unknown,
+  filters: unknown,
+  field: unknown = "nama"
+): string {
+  if (!Array.isArray(items)) return "";
+  const filterList = isRecord(filters) ? [filters] : filters;
+  const key = String(field ?? "nama").trim() || "nama";
+  const parts: string[] = [];
+
+  items.forEach((item, index) => {
+    if (!isRecord(item)) return;
+    if (findObject(item, filterList) === undefined) return;
+    let label = `Pihak ${terbilangPihak(index + 1)}`;
+    const name = item[key];
+    if (name !== null && name !== undefined && String(name) !== "") {
+      label += ` (${name})`;
+    }
+    parts.push(label);
+  });
+
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(", ")} dan ${parts[parts.length - 1]}`;
+}
+
 export function evalExpr(
   expr: string,
   ctx: Record<string, unknown>
 ): unknown {
   const trimmed = expr.trim();
+  const trailing = trimmed.match(
+    /^([a-zA-Z_]\w*)\s*\(([\s\S]*)\)\s*((?:\.[A-Za-z_]\w*(?:\[\d+\])?)+)$/
+  );
+  if (trailing) {
+    const [, name, rawArgs, suffix] = trailing;
+    const value = evalExpr(`${name}(${rawArgs})`, ctx);
+    const path = suffix
+      .replace(/\[(\d+)\]/g, ".$1")
+      .replace(/^\.+|\.+$/g, "");
+    return resolvePath((value ?? {}) as Record<string, unknown>, path);
+  }
   const fnMatch = trimmed.match(/^([a-zA-Z_][\w]*)\s*\(([\s\S]*)\)$/);
   if (fnMatch) {
     const [, name, rawArgs] = fnMatch;
     const args = tokenizeArgs(rawArgs).map((a) => evalArg(a, ctx));
+    if (name === "eval") {
+      return evalCalculation(rawArgs, ctx);
+    }
+    if (name === "find") {
+      return findObject(args[0], args[1], args[2]);
+    }
+    if (name === "section_contains") {
+      return sectionExists(ctx, args[0], args[1]);
+    }
+    if (name === "section" || name === "section_short") {
+      return lookupSection(ctx, args[0], args[1], name === "section_short");
+    }
     const fn = (FUNCTIONS as Record<string, (value: unknown, ...rest: unknown[]) => unknown>)[name];
     if (!fn) return undefined;
     return fn(...(args as [unknown, ...unknown[]]));
@@ -244,6 +740,7 @@ export function evalExpr(
 const FUNCTIONS = {
   terbilang: (v: unknown, satuan?: unknown) =>
     terbilang(v as number | string, satuan ? String(satuan) : undefined),
+  terbilang_pihak: (v: unknown) => terbilangPihak(v),
   terbilang_tanggal: (v: unknown) => terbilangTanggal(v as string),
   tanggal_huruf: (v: unknown) => tanggalHuruf(v as string),
   format_date: (v: unknown, fmt?: unknown) =>
@@ -270,6 +767,22 @@ const FUNCTIONS = {
     String(v ?? "").slice(Number(start), end === undefined ? undefined : Number(end)),
   count: (v: unknown) =>
     Array.isArray(v) ? v.length : typeof v === "object" && v !== null ? Object.keys(v as object).length : 0,
+  odd: (v: unknown) => {
+    try {
+      return Math.trunc(calcToNumber(v)) % 2 !== 0;
+    } catch {
+      return false;
+    }
+  },
+  even: (v: unknown) => {
+    try {
+      return Math.trunc(calcToNumber(v)) % 2 === 0;
+    } catch {
+      return false;
+    }
+  },
+  penerima_phb: (items: unknown, filters: unknown, field?: unknown) =>
+    penerimaPhb(items, filters, field),
   umur: (v: unknown) => {
     if (!v) return "";
     const d = new Date(String(v));
@@ -443,7 +956,12 @@ function evalCondition(expr: string, ctx: Record<string, unknown>): boolean {
     }
   }
 
-  return Boolean(evalExpr(e, ctx));
+  const value = evalExpr(e, ctx);
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === "object") {
+    return Object.keys(value as Record<string, unknown>).length > 0;
+  }
+  return Boolean(value);
 }
 
 const PLACEHOLDER = /\{\{\s*([#/]?(?:[\w@$.[\](),\s"'=<>-]|\([^}]*\))+)\s*\}\}/g;
@@ -536,6 +1054,7 @@ function renderBlocks(text: string, ctx: Record<string, unknown>): string {
             index: index + 1,
             "@index": index,
             "@number": index + 1,
+            "@original_number": index + 1,
             this: item,
           };
           if (alias) merged[alias] = item;
@@ -553,6 +1072,7 @@ function renderBlocks(text: string, ctx: Record<string, unknown>): string {
               index: entry.index + 1,
               "@number": position + 1,
               "@index": entry.index,
+              "@original_number": entry.index + 1,
               "@first": position === 0,
               "@last": position === total - 1,
               "@count": total,
@@ -603,7 +1123,11 @@ function renderBlocks(text: string, ctx: Record<string, unknown>): string {
     out = out.slice(0, start) + rendered + out.slice(block.end);
   }
 
-  return out.replace(PLACEHOLDER, (match) => {
+  // Regex baru per pemanggilan: renderBlocks bisa reentrant (mis. detail
+  // section berisi placeholder yang dirender dengan data pihak), sehingga
+  // regex global bersama tidak boleh dipakai saat replace bersarang.
+  const placeholderRe = new RegExp(PLACEHOLDER.source, PLACEHOLDER.flags);
+  return out.replace(placeholderRe, (match) => {
     const expr = match.slice(2, -2).trim();
     if (expr.startsWith("#") || expr.startsWith("/")) return "";
     const value = evalExpr(expr, ctx);

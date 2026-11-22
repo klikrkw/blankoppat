@@ -207,8 +207,11 @@ export interface SectionItem {
   item_id: number;
   item?: Item | null;
   uraian_id?: number | null;
+  pihak_id?: string | null;
   nama_item?: string;
   nama_uraian?: string;
+  nama_pihak?: string;
+  sebutan_pihak?: string;
   detail: string;
   short_text?: string;
   urutan?: number;

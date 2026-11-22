@@ -527,9 +527,15 @@ export const customFieldOptions: CustomFieldOption[] = [
 
 export const builtInFunctions = [
   { name: "terbilang", description: "Mengubah angka menjadi terbilang", example: "{{terbilang(custom.harga_transaksi)}}" },
+  { name: "terbilang_pihak", description: "Urutan pihak: Pertama, Kedua, Ketiga, Keempat, dst.", example: "{{terbilang_pihak(@number)}}" },
+  { name: "eval", description: "Hitung ekspresi aritmetika dengan variabel", example: "{{eval('custom.harga_transaksi * 0.05')}}" },
   { name: "terbilang_tanggal", description: "Mengubah tanggal menjadi terbilang", example: "{{terbilang_tanggal(custom.tanggal_akta)}}" },
   { name: "tanggal_huruf", description: "Tanggal format huruf (10 Januari 1985)", example: "{{tanggal_huruf(custom.tanggal_akta)}}" },
   { name: "format_date", description: "Format tanggal Indonesia", example: "{{format_date(pihak.tanggal_lahir, 'DD MMMM YYYY')}}" },
+  { name: "find", description: "Cari object di dalam array object", example: "{{find(pihak, peran.PENJUAL).nama}}" },
+  { name: "odd", description: "Cek nomor ganjil untuk filter where", example: "{{#each pihak where odd(@number)}}...{{/each}}" },
+  { name: "even", description: "Cek nomor genap untuk filter where", example: "{{#each pihak where even(@number)}}...{{/each}}" },
+  { name: "penerima_phb", description: "Daftar pihak yang cocok dengan filter, bernomor sesuai posisi aslinya", example: "{{penerima_phb(peran.PELEPAS, peran.PENERIMA)}}" },
   { name: "format_number", description: "Format angka ribuan", example: "{{format_number(obyek.luas_tanah)}}" },
   { name: "currency", description: "Format mata uang", example: "{{currency(custom.harga_transaksi, 'IDR')}}" },
   { name: "upper", description: "Ubah menjadi huruf besar", example: "{{upper(pihak.nama)}}" },
@@ -540,6 +546,7 @@ export const builtInFunctions = [
   { name: "default", description: "Nilai fallback jika kosong", example: "{{default(custom.keterangan, '-')}}" },
   { name: "sebutan", description: "Tuan/Nona/Nyonya berdasarkan jenis kelamin dan status perkawinan", example: "{{sebutan(pihak.jenis_kelamin, pihak.status_perkawinan)}}" },
   { name: "section", description: "Ambil detail section berdasarkan nama item", example: "{{section('Luas Tanah')}}" },
+  { name: "section_contains", description: "Cek apakah ada section dengan nama item", example: "{{#if section_contains('Luas Tanah')}}...{{/if}}" },
   { name: "uraian", description: "Ambil isi master uraian berdasarkan nama", example: "{{uraian('Uraian Jual Beli')}}" },
   { name: "umur", description: "Umur dalam tahun dari tanggal lahir", example: "{{umur(pihak.tanggal_lahir)}}" },
   { name: "today", description: "Tanggal hari ini", example: "{{today()}}" },

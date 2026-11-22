@@ -282,6 +282,7 @@ def render_text(template: str, context: Dict[str, Any]) -> str:
                         "index": idx + 1,
                         "@index": idx,
                         "@number": idx + 1,
+                        "@original_number": idx + 1,
                         "this": item,
                     }
                     if alias:
@@ -303,6 +304,7 @@ def render_text(template: str, context: Dict[str, Any]) -> str:
                         "index": idx + 1,
                         "@number": pos + 1,
                         "@index": idx,
+                        "@original_number": idx + 1,
                         "@first": pos == 0,
                         "@last": pos == total - 1,
                         "@count": total,
@@ -320,24 +322,29 @@ def render_text(template: str, context: Dict[str, Any]) -> str:
         cursor = 0
         depth = 0
         position = 0
+        # Cocokkan seluruh tag `{{...}}`, bukan hanya nama tag, agar nested
+        # `#if` dengan argumen (mis. `{{#if @count>1}}`) ikut dihitung.
+        tag_re = re.compile(r"\{\{([\s\S]*?)\}\}")
         while position < len(body):
-            token = re.search(r"\{\{\s*(#?if\b|/if\b|endif\b|else(?:\s+if\s+.+?)?)\s*\}\}?", body[position:])
+            token = tag_re.search(body, position)
             if not token:
                 break
-            absolute = position + token.start()
+            absolute = token.start()
             tag = token.group(1).strip()
-            if tag.startswith("#if") or tag == "if":
+            position = token.end()
+            if not re.match(r"(?i)^(#?if\b|/if\b|endif\b|else\b)", tag):
+                continue
+            if re.match(r"(?i)^#?if\b", tag):
                 depth += 1
-            elif tag.startswith("/") or tag == "endif":
+            elif re.match(r"(?i)^(/if|endif)\b", tag):
                 depth -= 1
             elif depth == 0:
                 bodies.append(body[cursor:absolute])
-                cursor = position + token.end()
+                cursor = token.end()
                 if tag.startswith("else if"):
                     exprs.append(tag[7:].strip())
                 else:
                     exprs.append("__else__")
-            position += token.end()
         bodies.append(body[cursor:])
 
         chosen = ""

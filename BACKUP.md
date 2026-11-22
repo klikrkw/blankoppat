@@ -5,12 +5,12 @@ Panduan backup project Blanko PPAT dan database MySQL. Backup disimpan di
 
 Isi setiap backup:
 
-| File | Isi |
-|---|---|
-| `project.tar.gz` | Seluruh project: kode, `backend/.env`, `storage/` (template & dokumen), `.git`, konfigurasi nginx/docker |
-| `database.sql.gz` | Dump MySQL (`mysqldump --single-transaction --routines --triggers`) |
-| `MANIFEST.txt` | Waktu, host, commit git, ukuran file, ringkasan tabel |
-| `SHA256SUMS` | Checksum untuk verifikasi sebelum restore |
+| File              | Isi                                                                                                      |
+| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| `project.tar.gz`  | Seluruh project: kode, `backend/.env`, `storage/` (template & dokumen), `.git`, konfigurasi nginx/docker |
+| `database.sql.gz` | Dump MySQL (`mysqldump --single-transaction --routines --triggers`)                                      |
+| `MANIFEST.txt`    | Waktu, host, commit git, ukuran file, ringkasan tabel                                                    |
+| `SHA256SUMS`      | Checksum untuk verifikasi sebelum restore                                                                |
 
 Yang **tidak** ikut (bisa dibuat ulang): `frontend/node_modules`, `frontend/.next`, `backend/.venv`, `backups/`.
 

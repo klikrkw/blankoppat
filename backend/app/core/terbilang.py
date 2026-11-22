@@ -117,6 +117,40 @@ def format_date(value: Union[str, date, datetime], fmt: str = "DD MMMM YYYY") ->
     return result
 
 
+def terbilang_pihak(value: Union[int, float, str]) -> str:
+    """Ubah angka menjadi urutan pihak: Pertama, Kedua, Ketiga, Keempat, ...
+
+    Mendukung angka puluhan/ratusan/ribuan, mis. 21 -> "Kedua puluh satu",
+    100 -> "Keseratus", 1000 -> "Keseribu".
+    """
+    try:
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return "-"
+            num = float(text.replace(".", "").replace(",", "."))
+        else:
+            num = float(value)
+    except (TypeError, ValueError):
+        return "-"
+
+    if num != num or num in (float("inf"), float("-inf")):  # NaN / inf
+        return "-"
+    if num != int(num) or num < 1:
+        return "-"
+
+    n = int(num)
+    if n == 1:
+        return "Pertama"
+
+    words = terbilang(n).lower()
+    # "satu juta" -> "sejuta" agar menjadi "Kesejuta" (bukan "Kesatu juta").
+    if words.startswith("satu "):
+        words = "se" + words[len("satu "):]
+    hasil = f"ke{words}"
+    return hasil[0].upper() + hasil[1:]
+
+
 def terbilang_tanggal(value: Union[str, date, datetime]) -> str:
     d = _to_date(value)
     if d is None:

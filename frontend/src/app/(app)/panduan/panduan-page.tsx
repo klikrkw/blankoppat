@@ -41,7 +41,7 @@ const FIELD_GROUPS: FieldGroup[] = [
   },
   {
     title: "Pihak",
-    description: "Data pihak hasil relasi e-KTP. Gunakan `#each` untuk daftar.",
+    description: "Data pihak hasil relasi e-KTP. Pihak dapat memiliki induk (parent) dan child; gunakan `#each` untuk daftar.",
     items: [
       { path: "pihak", desc: "Semua pihak (list) dengan field role & sebutan" },
       { path: "pihak.PELEPAS", desc: "Alias role: sama dengan peran.PELEPAS (bisa juga pihak.PENERIMA_KUASA, dst.)", example: "{{#if pihak.PELEPAS and pihak.PENERIMA_KUASA}}...{{/if}}" },
@@ -57,6 +57,11 @@ const FIELD_GROUPS: FieldGroup[] = [
       { path: "peran.PEMBERI_KUASA", desc: "Pihak berperan PEMBERI KUASA" },
       { path: "peran.PENERIMA_KUASA", desc: "Pihak berperan PENERIMA KUASA" },
       { path: "peran.PERSETUJUAN", desc: "Pihak berperan PERSETUJUAN (mis. suami/isteri)" },
+      { path: "p.parent", desc: "Objek pihak induk (parent) dari item loop", example: "{{#each peran.PENERIMA as p}}{{p.parent.nama}}{{/each}}" },
+      { path: "p.parent.parent.nama", desc: "Parent bertingkat (kakek/nenek relasi)", example: "{{p.parent.parent.nama}}" },
+      { path: "p.children", desc: "Daftar child (per orang / e-KTP). Satu pihak multi e-KTP tetap dirinci", example: "{{#each p.children as c}}{{ektp_paragraph(c)}}{{/each}}" },
+      { path: "c.roles", desc: "Semua role child tersebut (mis. PELEPAS dan PEMBERI_KUASA)", example: "{{#if c.roles contains 'PEMBERI_KUASA'}}...{{/if}}" },
+      { path: "p.children[0].nama", desc: "Child pertama", example: "{{p.children[0].nama}}" },
     ],
   },
   {
@@ -135,7 +140,14 @@ const FIELD_GROUPS: FieldGroup[] = [
       { path: "sections", desc: "Daftar section (list)", example: "{{#each sections}}{{nama_item}}: {{detail}}{{/each}}" },
       { path: "sections_by_name.<Nama Item>", desc: "Detail section berdasarkan nama item", example: "{{sections_by_name.Luas Tanah}}" },
       { path: "section('Nama Item')", desc: "Fungsi ambil detail section", example: "{{section('Luas Tanah')}}" },
+      { path: "section_contains('Nama Item')", desc: "Cek apakah ada section dengan nama item (true/false) untuk #if", example: "{{#if section_contains('Luas Tanah')}}ADA{{/if}}" },
+      { path: "section_contains('Nama Item', 'ROLE')", desc: "Cek section khusus pihak berdasarkan role", example: "{{#if section_contains('Kuasa', 'PENERIMA_KUASA')}}ADA{{/if}}" },
       { path: "section_short('Nama Item')", desc: "Fungsi ambil short text section (terisi dari isi singkat uraian)", example: "{{section_short('Luas Tanah')}}" },
+      { path: "section('Nama Item', 'ROLE')", desc: "Ambil section khusus pihak berdasarkan role", example: "{{section('Kuasa', 'PENERIMA_KUASA')}}" },
+      { path: "section('Nama Item', p)", desc: "Ambil section milik pihak di dalam loop (lebih akurat)", example: "{{#each peran.PELEPAS as p}}{{section('Kuasa', p)}}{{/each}}" },
+      { path: "section_short('Nama Item', 'ROLE')", desc: "Short text section khusus pihak", example: "{{section_short('Kuasa', 'PENERIMA_KUASA')}}" },
+      { path: "sections_by_party.<ROLE>.<Nama Item>", desc: "Peta section per role", example: "{{sections_by_party.PELEPAS.Kuasa}}" },
+      { path: "pihak_id / nama_pihak", desc: "Data pihak pada item section (di dalam #each sections)" },
       { path: "nama_item", desc: "Nama item (di dalam #each sections)" },
       { path: "detail", desc: "Detail section (di dalam #each sections)" },
       { path: "nama_uraian", desc: "Nama uraian section (di dalam #each sections)" },
@@ -208,6 +220,10 @@ const FIELD_GROUPS: FieldGroup[] = [
 
 const FUNCTIONS: FunctionItem[] = [
   { name: "terbilang", desc: "Angka menjadi terbilang", example: "{{terbilang(custom.harga_transaksi, 'rupiah')}}" },
+  { name: "terbilang_pihak", desc: "Urutan pihak: Pertama, Kedua, Ketiga, Keempat, dst.", example: "{{terbilang_pihak(@number)}}" },
+  { name: "eval", desc: "Hitung ekspresi aritmetika dengan variabel", example: "{{eval('custom.harga_transaksi * 0.05')}}" },
+  { name: "find", desc: "Cari object di dalam array object", example: "{{find(pihak, peran.PENJUAL).nama}}" },
+  { name: "penerima_phb", desc: "Daftar pihak yang cocok, bernomor sesuai posisi aslinya", example: "{{penerima_phb(peran.PELEPAS, peran.PENERIMA)}}" },
   { name: "terbilang_tanggal", desc: "Tanggal menjadi terbilang", example: "{{terbilang_tanggal(custom.tanggal_akta)}}" },
   { name: "tanggal_huruf", desc: "Tanggal format huruf", example: "{{tanggal_huruf(custom.tanggal_akta)}}" },
   { name: "format_date", desc: "Format tanggal Indonesia", example: '{{format_date(custom.tanggal_akta, "DD MMMM YYYY")}}' },
@@ -223,10 +239,13 @@ const FUNCTIONS: FunctionItem[] = [
   { name: "concat", desc: "Gabung teks", example: "{{concat(pihak.nama, ', ', pihak.alamat)}}" },
   { name: "default", desc: "Nilai fallback jika kosong", example: "{{default(pihak.nama, '-')}}" },
   { name: "count", desc: "Jumlah item dalam daftar", example: "{{count(peran.PENJUAL)}}" },
+  { name: "odd", desc: "Cek nomor ganjil untuk filter where", example: "{{#each pihak where odd(@number)}}...{{/each}}" },
+  { name: "even", desc: "Cek nomor genap untuk filter where", example: "{{#each pihak where even(@number)}}...{{/each}}" },
   { name: "umur", desc: "Umur dalam tahun dari tanggal lahir", example: "{{umur(pihak.tanggal_lahir)}}" },
   { name: "sebutan", desc: "Tuan / Nona / Nyonya", example: "{{sebutan(jenis_kelamin, status_perkawinan)}}" },
   { name: "ektp_paragraph", desc: "Satu paragraf lengkap data e-KTP", example: "{{ektp_paragraph(this)}}" },
   { name: "section", desc: "Detail section berdasarkan nama item", example: "{{section('Luas Tanah')}}" },
+  { name: "section_contains", desc: "Cek apakah ada section dengan nama item", example: "{{#if section_contains('Luas Tanah')}}...{{/if}}" },
   { name: "section_short", desc: "Short text section berdasarkan nama item", example: "{{section_short('Luas Tanah')}}" },
   { name: "uraian", desc: "Isi master uraian berdasarkan nama", example: "{{uraian('Uraian Jual Beli')}}" },
   { name: "uraian_singkat", desc: "Isi singkat master uraian (fallback ke isi lengkap bila kosong)", example: "{{uraian_singkat('Uraian Jual Beli')}}" },
@@ -268,8 +287,9 @@ const BLOCK_GUIDE: BlockGuideSection[] = [
     desc: "Dipakai untuk penomoran atau memilih item tertentu.",
     variables: [
       { name: "{{index}}", desc: "Nomor urut mulai 1 (sama dengan {{@number}})." },
-      { name: "{{@number}}", desc: "Nomor urut mulai 1." },
-      { name: "{{@index}}", desc: "Indeks mulai 0 (item pertama = 0)." },
+      { name: "{{@number}}", desc: "Nomor urut hasil filter mulai 1." },
+      { name: "{{@original_number}}", desc: "Nomor urut asli sebelum filter where (mulai 1)." },
+      { name: "{{@index}}", desc: "Indeks asli mulai 0 (item pertama = 0)." },
       { name: "{{@count}}", desc: "Jumlah item (setelah filter where)." },
       { name: "{{@first}}", desc: "true pada item pertama; pakai di {{#if @first}}." },
       { name: "{{@last}}", desc: "true pada item terakhir." },
@@ -305,6 +325,8 @@ Lebih dari dua penerima
     desc: "Kombinasi where dan if untuk memilih item berdasarkan posisi.",
     forms: [
       { syntax: "{{#each list where @index>0}}", note: "Semua kecuali item pertama." },
+      { syntax: "{{#each list where odd(@number)}}", note: "Hanya item bernomor ganjil (1, 3, 5, ...)." },
+      { syntax: "{{#each list where even(@number)}}", note: "Hanya item bernomor genap (2, 4, 6, ...)." },
       { syntax: "{{#each list where @index>=1 and @index<=2}}", note: "Hanya item ke-2 dan ke-3." },
       { syntax: "{{#each list where @index==0 or @index==3}}", note: "Hanya item ke-1 dan ke-4." },
       { syntax: "{{#each list}}{{#if @index==1}} ... {{/if}}{{/each}}", note: "Cara alternatif dengan if." },
@@ -377,6 +399,10 @@ const SNIPPETS = [
   {
     title: "Filter indeks dengan where",
     code: `{{#each peran.PENERIMA where @index>0}}\n{{@number}}. {{nama}}\n{{/each}}`,
+  },
+  {
+    title: "Hanya item ganjil / genap",
+    code: `{{#each pihak where odd(@number)}}\n{{@original_number}}. {{nama}}\n{{/each}}\n\n{{#each pihak where even(@number)}}\n{{@original_number}}. {{nama}}\n{{/each}}`,
   },
   {
     title: "Pilih indeks tertentu (where + if)",
@@ -610,12 +636,14 @@ export default function PanduanPage() {
                   langkah <b>Pihak</b>, lalu buka tab <b>Sections</b>.
                 </li>
                 <li>
-                  Klik <b>Tambah Section</b>, pilih <b>Item</b> dan <b>Uraian</b>. Field <b>Detail</b> otomatis
-                  terisi dari <code className="rounded bg-muted px-1">isi_uraian</code>, sedangkan
-                  <b> Short Text</b> terisi dari <code className="rounded bg-muted px-1">isi_singkat</code>.
-                  Keduanya tetap bisa diedit dan dipanggil lewat
-                  <code className="rounded bg-muted px-1">section('Nama Item')</code> /
-                  <code className="rounded bg-muted px-1">section_short('Nama Item')</code>.
+                  Klik <b>Tambah Section</b>, pilih <b>Item</b>, <b>Uraian</b>, dan opsional <b>Pihak</b>.
+                  Field <b>Detail</b> otomatis terisi dari
+                  <code className="rounded bg-muted px-1">isi_uraian</code>, sedangkan <b>Short Text</b>
+                  terisi dari <code className="rounded bg-muted px-1">isi_singkat</code>. Keduanya tetap bisa
+                  diedit. Section tanpa pihak dipanggil lewat
+                  <code className="rounded bg-muted px-1">section('Nama Item')</code>; section berpihak
+                  lewat <code className="rounded bg-muted px-1">section('Nama Item', 'ROLE')</code> atau
+                  <code className="rounded bg-muted px-1">section('Nama Item', p)</code> di dalam loop pihak.
                 </li>
                 <li>Lanjutkan ke Custom Field, pilih surat, lalu generate dokumen.</li>
               </ol>
@@ -630,6 +658,7 @@ export default function PanduanPage() {
                     { label: "Satu item (map)", code: "{{sections_by_name.Luas Tanah}}" },
                     { label: "Dengan alias", code: "{{#each sections as s}}{{s.nama_item}} — {{s.detail}}\n{{/each}}" },
                     { label: "Kondisi", code: "{{#if section('Luas Tanah')}}Luas: {{section('Luas Tanah')}}{{else}}Luas: -{{/if}}" },
+                    { label: "Section per pihak", code: "{{#each peran.PELEPAS as p}}{{section('Kuasa', p)}}{{/each}}" },
                   ].map((item) => (
                     <div key={item.label} className="rounded-md border bg-card">
                       <div className="flex items-center justify-between border-b px-2 py-1">
@@ -646,6 +675,8 @@ export default function PanduanPage() {
                 <p className="font-semibold">Catatan</p>
                 <ul className="mt-1.5 list-disc space-y-1 pl-4">
                   <li>Nama item dipakai sebagai kunci pada <code className="rounded bg-muted px-1">section()</code>, <code className="rounded bg-muted px-1">section_short()</code>, <code className="rounded bg-muted px-1">sections_by_name</code>, dan <code className="rounded bg-muted px-1">sections_by_name_short</code>.</li>
+                  <li>Section dengan <b>Pihak</b> dipanggil lewat parameter kedua: role (mis. <code className="rounded bg-muted px-1">'PELEPAS'</code>) atau objek pihak di dalam <code className="rounded bg-muted px-1">#each</code>. Tersedia juga peta <code className="rounded bg-muted px-1">sections_by_party</code> dan <code className="rounded bg-muted px-1">sections_by_party_short</code>.</li>
+                  <li>Saat parameter pihak berupa objek, placeholder di detail section ikut diisi data pihak, mis. <code className="rounded bg-muted px-1">{"{{nama}}"}</code>, <code className="rounded bg-muted px-1">{"{{nik}}"}</code>, <code className="rounded bg-muted px-1">{"{{alamat}}"}</code>. Jika section belum ada untuk pihak tersebut, dipakai section umum dengan nama item sama.</li>
                   <li>Ubah teks detail langsung di tab Sections tanpa mengubah master uraian.</li>
                   <li>Urutan section mengikuti urutan saat ditambahkan.</li>
                   <li>Section hanya tersedia setelah transaksi disimpan (wizard selesai di langkah surat/generate).</li>
@@ -818,6 +849,162 @@ export default function PanduanPage() {
                   <CopyButton value={fn.example} />
                 </div>
               ))}
+            </CardContent>
+          </Card>
+
+          <Card className="border shadow-none">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-[14.5px]">Urutan pihak — terbilang_pihak()</CardTitle>
+              <p className="text-[12px] text-muted-foreground">
+                Mengubah angka menjadi urutan pihak: Pertama, Kedua, Ketiga, Keempat, dan seterusnya.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-1">
+                <p className="font-mono text-[11.5px] text-primary">
+                  {"{{terbilang_pihak(1)}}"} → Pertama
+                </p>
+                <p className="font-mono text-[11.5px] text-primary">
+                  {"{{terbilang_pihak(@number)}}"} → nomor urut di dalam {"{{#each}}"}
+                </p>
+              </div>
+              <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 text-[11.5px]">
+{`{{#each peran.PENERIMA_KUASA as p}}
+Pihak {{terbilang_pihak(@number)}}: {{p.nama}}
+{{/each}}`}
+              </pre>
+              <div className="grid grid-cols-2 gap-1.5 text-[11.5px] text-muted-foreground sm:grid-cols-4">
+                {[
+                  ["1", "Pertama"],
+                  ["2", "Kedua"],
+                  ["3", "Ketiga"],
+                  ["4", "Keempat"],
+                  ["10", "Kesepuluh"],
+                  ["11", "Kesebelas"],
+                  ["20", "Kedua puluh"],
+                  ["21", "Kedua puluh satu"],
+                ].map(([angka, hasil]) => (
+                  <div key={angka} className="rounded-md border bg-card px-2 py-1.5">
+                    <span className="font-mono text-foreground">{angka}</span>
+                    <span className="mx-1">→</span>
+                    {hasil}
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11.5px] text-muted-foreground">
+                Mendukung puluhan, ratusan, dan ribuan (mis. 100 → Keseratus, 1000 → Keseribu).
+                Nilai 0, negatif, desimal, atau bukan angka menghasilkan{" "}
+                <code className="font-mono">{'"-"'}</code>.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="border shadow-none">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-[14.5px]">Perhitungan — eval()</CardTitle>
+              <p className="text-[12px] text-muted-foreground">
+                Menghitung ekspresi aritmetika yang memakai variabel template.
+                Ekspresi boleh dikutip atau langsung.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 text-[11.5px]">
+{`{{eval('custom.harga_transaksi * 0.05')}}
+{{eval(custom.harga_transaksi * 0.05)}}
+{{eval('(obyek.luas_tanah * 10000) + custom.biaya')}}
+{{eval('@number * 10000')}}
+{{eval('round(custom.harga_transaksi / 3, 2)')}}`}
+              </pre>
+              <div className="grid gap-1.5 text-[11.5px] text-muted-foreground sm:grid-cols-2">
+                <p>
+                  Operator: <code className="font-mono">+ - * / % **</code> dan tanda kurung.
+                </p>
+                <p>
+                  Fungsi: <code className="font-mono">min</code>,{" "}
+                  <code className="font-mono">max</code>,{" "}
+                  <code className="font-mono">abs</code>,{" "}
+                  <code className="font-mono">round</code>.
+                </p>
+                <p>
+                  Variabel: <code className="font-mono">custom.harga</code>,{" "}
+                  <code className="font-mono">obyek.luas_tanah</code>,{" "}
+                  <code className="font-mono">@number</code>, dll.
+                </p>
+                <p>
+                  Hasil tidak valid / variabel kosong menghasilkan{" "}
+                  <code className="font-mono">{'"-"'}</code>.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border shadow-none">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-[14.5px]">Pencarian object — find()</CardTitle>
+              <p className="text-[12px] text-muted-foreground">
+                Mencari satu object di dalam array object.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 text-[11.5px]">
+{`{{find(pihak, peran.PENJUAL).nama}}
+{{find(peran.PENJUAL, 'nik', '123').nama}}
+{{#if find(pihak, peran.PENJUAL)}}ADA{{else}}TIDAK{{/if}}`}
+              </pre>
+              <div className="space-y-1.5 text-[11.5px] text-muted-foreground">
+                <p>
+                  Pencocokan memakai{" "}
+                  <code className="font-mono">party_id</code> /{" "}
+                  <code className="font-mono">pihak_id</code>,{" "}
+                  <code className="font-mono">nik</code>,{" "}
+                  <code className="font-mono">ektp_id</code>, lalu{" "}
+                  <code className="font-mono">id</code>. Jika tidak ada yang cocok,
+                  seluruh field object dibandingkan.
+                </p>
+                <p>
+                  Urutan <code className="font-mono">find(object, array)</code> atau{" "}
+                  <code className="font-mono">find(array, object)</code> sama-sama
+                  didukung. Bisa juga{" "}
+                  <code className="font-mono">find(array, &apos;field&apos;, nilai)</code>.
+                </p>
+                <p>
+                  Jika tidak ditemukan, hasilnya <code className="font-mono">{'"-"'}</code>{" "}
+                  saat dicetak.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border shadow-none">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-[14.5px]">Penerima PHB — penerima_phb()</CardTitle>
+              <p className="text-[12px] text-muted-foreground">
+                Menggabungkan logika #each + find + terbilang_pihak menjadi satu teks.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <pre className="overflow-x-auto rounded-lg border bg-muted/40 p-3 text-[11.5px]">
+{`{{penerima_phb(peran.PELEPAS, peran.PENERIMA)}}
+
+Hasil:
+Pihak Kedua (Budi), Pihak Ketiga (Ani) dan Pihak Kelima (Citra)`}
+              </pre>
+              <div className="space-y-1.5 text-[11.5px] text-muted-foreground">
+                <p>
+                  Nomor memakai posisi asli pada array pertama, bukan urutan hasil
+                  filter. Jadi pihak yang cocok pada posisi 2, 3, dan 5 tetap menjadi
+                  Kedua, Ketiga, dan Kelima.
+                </p>
+                <p>
+                  Argumen ketiga opsional untuk memilih field, mis.{" "}
+                  <code className="font-mono">{`penerima_phb(peran.PELEPAS, peran.PENERIMA, 'nik')`}</code>.
+                  Default-nya <code className="font-mono">nama</code>.
+                </p>
+                <p>
+                  Jika tidak ada yang cocok, hasilnya <code className="font-mono">{'"-"'}</code>{" "}
+                  saat dicetak dan bernilai false di <code className="font-mono">#if</code>.
+                </p>
+              </div>
             </CardContent>
           </Card>
 

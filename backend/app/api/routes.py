@@ -155,6 +155,7 @@ def _sections_context(session: Session, transaksi_id: str) -> List[Dict[str, Any
     for sec in rows:
         item = session.get(Item, sec.item_id) if sec.item_id else None
         uraian_row = session.get(Uraian, sec.uraian_id) if sec.uraian_id else None
+        party = session.get(Pihak, sec.pihak_id) if sec.pihak_id else None
         result.append(
             {
                 "id": sec.id,
@@ -162,6 +163,9 @@ def _sections_context(session: Session, transaksi_id: str) -> List[Dict[str, Any
                 "nama_item": item.nama_item if item else "",
                 "uraian_id": sec.uraian_id,
                 "nama_uraian": uraian_row.nama_uraian if uraian_row else "",
+                "pihak_id": sec.pihak_id,
+                "nama_pihak": party.nama_pihak if party else "",
+                "sebutan_pihak": party.sebutan_pihak if party else "",
                 "detail": _decode_section_symbols(sec.detail or ""),
                 "short_text": _decode_section_symbols(sec.short_text or ""),
                 "urutan": sec.urutan,
@@ -320,11 +324,19 @@ class PihakInput(BaseModel):
     sebutan_pihak: str
     pihak_role_id: Optional[int] = None
     ektp_ids: List[int] = Field(default_factory=list)
+    # Relasi parent/child. `key` adalah id sementara antar baris pada request,
+    # `parent_key` merujuk ke key baris lain. `parent_id` dipakai bila klien
+    # mengirim id pihak yang sudah ada.
+    key: str = ""
+    parent_key: str = ""
+    parent_id: Optional[str] = None
 
 
 class SectionInput(BaseModel):
     item_id: int
     uraian_id: Optional[int] = None
+    pihak_id: Optional[str] = None
+    pihak_key: str = ""
     detail: str = ""
     short_text: str = ""
 
@@ -2419,29 +2431,14 @@ def create_transaksi(
     )
     session.add(tx)
     session.flush()  # pastikan baris transaksi tersimpan sebelum pihak (FK)
-    for idx, p in enumerate(body.pihak, start=1):
-        role_id = p.pihak_role_id
-        if role_id is None:
-            role_id = session.execute(
-                select(PihakRole.id).where(PihakRole.role == p.nama_pihak)
-            ).scalar_one_or_none()
-        pihak = Pihak(
-            id=uuid4().hex,
-            transaksi_id=tx.id,
-            pihak_role_id=role_id,
-            nama_pihak=p.nama_pihak,
-            sebutan_pihak=p.sebutan_pihak,
-            urutan=idx,
-        )
-        session.add(pihak)
-        for pos, ektp_id in enumerate(p.ektp_ids, start=1):
-            session.add(PihakEktp(id=uuid4().hex, pihak_id=pihak.id, ektp_id=ektp_id, urutan=pos))
+    party_keys = _save_pihak_rows(session, tx.id, body.pihak)
     for idx, sec in enumerate(body.sections, start=1):
         session.add(
             Section(
                 transaksi_id=tx.id,
                 item_id=sec.item_id,
                 uraian_id=sec.uraian_id,
+                pihak_id=_resolve_section_party(session, tx.id, sec, party_keys),
                 detail=sec.detail,
                 short_text=sec.short_text,
                 urutan=idx,
@@ -2473,6 +2470,7 @@ def _serialize_transaksi_detail(tx: Transaksi, session: Session) -> Dict[str, An
                 "role": p.nama_pihak,
                 "sebutan": p.sebutan_pihak,
                 "pihak_role_id": p.pihak_role_id,
+                "parent_id": p.parent_id,
                 "urutan": p.urutan,
                 "ektp": [serialize_ektp(e) for e in ektp_rows if e is not None],
             }
@@ -2505,6 +2503,7 @@ def _serialize_transaksi_detail(tx: Transaksi, session: Session) -> Dict[str, An
     for sec in section_rows:
         item = session.get(Item, sec.item_id) if sec.item_id else None
         uraian_row = session.get(Uraian, sec.uraian_id) if sec.uraian_id else None
+        section_party = session.get(Pihak, sec.pihak_id) if sec.pihak_id else None
         sections_out.append(
             {
                 "id": sec.id,
@@ -2512,6 +2511,9 @@ def _serialize_transaksi_detail(tx: Transaksi, session: Session) -> Dict[str, An
                 "nama_item": item.nama_item if item else "",
                 "uraian_id": sec.uraian_id,
                 "nama_uraian": uraian_row.nama_uraian if uraian_row else "",
+                "pihak_id": sec.pihak_id,
+                "nama_pihak": section_party.nama_pihak if section_party else "",
+                "sebutan_pihak": section_party.sebutan_pihak if section_party else "",
                 "detail": sec.detail or "",
                 "short_text": sec.short_text or "",
                 "urutan": sec.urutan,
@@ -2532,6 +2534,96 @@ def _serialize_transaksi_detail(tx: Transaksi, session: Session) -> Dict[str, An
         "surat_ids": surat_ids,
         "custom_fields": stored,
     }
+
+
+def _resolve_section_party(
+    session: Session,
+    transaksi_id: str,
+    sec: SectionInput,
+    party_keys: Dict[str, str],
+) -> Optional[str]:
+    """Tentukan pihak_id section dari key sementara atau id yang sudah ada."""
+    if sec.pihak_key:
+        resolved = party_keys.get(sec.pihak_key)
+        if not resolved:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Pihak section dengan key '{sec.pihak_key}' tidak ditemukan",
+            )
+        return resolved
+    if sec.pihak_id:
+        row = session.get(Pihak, sec.pihak_id)
+        if row is None or row.transaksi_id != transaksi_id:
+            raise HTTPException(status_code=400, detail="Pihak section tidak ditemukan pada transaksi ini")
+        return sec.pihak_id
+    return None
+
+
+def _save_pihak_rows(
+    session: Session, transaksi_id: str, rows: List[PihakInput]
+) -> Dict[str, str]:
+    """Simpan pihak + relasi parent berdasarkan key sementara."""
+    created: List[Pihak] = []
+    key_map: Dict[str, str] = {}
+    pending: List[tuple[Pihak, str, Optional[str]]] = []
+
+    for idx, p in enumerate(rows, start=1):
+        role_id = p.pihak_role_id
+        if role_id is None:
+            role_id = session.execute(
+                select(PihakRole.id).where(PihakRole.role == p.nama_pihak)
+            ).scalar_one_or_none()
+        pihak_id = uuid4().hex
+        key = (p.key or "").strip()
+        if key:
+            if key in key_map:
+                raise HTTPException(status_code=400, detail=f"Key pihak duplikat: {key}")
+            key_map[key] = pihak_id
+        pihak = Pihak(
+            id=pihak_id,
+            transaksi_id=transaksi_id,
+            pihak_role_id=role_id,
+            nama_pihak=p.nama_pihak,
+            sebutan_pihak=p.sebutan_pihak,
+            urutan=idx,
+        )
+        session.add(pihak)
+        created.append(pihak)
+        for pos, ektp_id in enumerate(p.ektp_ids, start=1):
+            session.add(PihakEktp(id=uuid4().hex, pihak_id=pihak_id, ektp_id=ektp_id, urutan=pos))
+        pending.append((pihak, key, (p.parent_key or "").strip(), p.parent_id))
+
+    session.flush()
+    ids = {p.id for p in created}
+    for pihak, key, parent_key, parent_id in pending:
+        parent = key_map.get(parent_key) if parent_key else (parent_id or "")
+        if parent_key and not parent:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Parent pihak dengan key '{parent_key}' tidak ditemukan",
+            )
+        if not parent:
+            continue
+        if parent not in ids:
+            raise HTTPException(status_code=400, detail="Parent pihak tidak ditemukan pada transaksi ini")
+        if parent == pihak.id:
+            raise HTTPException(status_code=400, detail="Pihak tidak boleh menjadi parent dirinya sendiri")
+        pihak.parent_id = parent
+    session.flush()
+
+    # validasi siklus (A -> B -> A)
+    parent_of = {p.id: p.parent_id for p in created}
+    for pid in parent_of:
+        seen = set()
+        cur: Optional[str] = pid
+        while cur:
+            if cur in seen:
+                raise HTTPException(
+                    status_code=400, detail="Relasi parent pihak membentuk siklus"
+                )
+            seen.add(cur)
+            cur = parent_of.get(cur)
+    return key_map
 
 
 @router.delete("/transaksi/{tx_id}")
@@ -2610,23 +2702,7 @@ def update_transaksi(
     # Ganti pihak
     session.execute(text("DELETE FROM pihak_ektp WHERE pihak_id IN (SELECT id FROM pihak WHERE transaksi_id = :t)"), {"t": tx.id})
     session.execute(text("DELETE FROM pihak WHERE transaksi_id = :t"), {"t": tx.id})
-    for idx, p in enumerate(body.pihak, start=1):
-        role_id = p.pihak_role_id
-        if role_id is None:
-            role_id = session.execute(
-                select(PihakRole.id).where(PihakRole.role == p.nama_pihak)
-            ).scalar_one_or_none()
-        pihak = Pihak(
-            id=uuid4().hex,
-            transaksi_id=tx.id,
-            pihak_role_id=role_id,
-            nama_pihak=p.nama_pihak,
-            sebutan_pihak=p.sebutan_pihak,
-            urutan=idx,
-        )
-        session.add(pihak)
-        for pos, ektp_id in enumerate(p.ektp_ids, start=1):
-            session.add(PihakEktp(id=uuid4().hex, pihak_id=pihak.id, ektp_id=ektp_id, urutan=pos))
+    party_keys = _save_pihak_rows(session, tx.id, body.pihak)
 
     # Ganti sections hanya jika dikirim (None = pertahankan yang lama)
     if body.sections is not None:
@@ -2637,6 +2713,7 @@ def update_transaksi(
                     transaksi_id=tx.id,
                     item_id=sec.item_id,
                     uraian_id=sec.uraian_id,
+                    pihak_id=_resolve_section_party(session, tx.id, sec, party_keys),
                     detail=sec.detail,
                     short_text=sec.short_text,
                     urutan=idx,
@@ -2672,6 +2749,39 @@ def update_transaksi(
 # ---------------------------------------------------------------------------
 
 
+def _sections_by_name(session: Session, transaksi_id: str, mode: str = "detail") -> Dict[str, str]:
+    data: Dict[str, str] = {}
+    for row in _sections_context(session, transaksi_id):
+        if row.get("pihak_id"):
+            continue  # section khusus pihak tidak menimpa section umum
+        name = row.get("nama_item") or ""
+        if not name:
+            continue
+        value = row.get("detail") or ""
+        if mode == "short":
+            value = row.get("short_text") or value
+        data[name] = value
+    return data
+
+
+def _sections_by_party(
+    session: Session, transaksi_id: str, mode: str = "detail"
+) -> Dict[str, Dict[str, str]]:
+    data: Dict[str, Dict[str, str]] = {}
+    for row in _sections_context(session, transaksi_id):
+        role = (row.get("nama_pihak") or "").strip()
+        name = row.get("nama_item") or ""
+        if not role or not name:
+            continue
+        value = row.get("detail") or ""
+        if mode == "short":
+            value = row.get("short_text") or value
+        slug = re.sub(r"[^a-z0-9]+", "_", role.lower()).strip("_")
+        for key in (role, slug):
+            data.setdefault(key, {})[name] = value
+    return data
+
+
 def _transaction_context(session: Session, tx: Transaksi, custom_values: Dict[str, Any]) -> Dict[str, Any]:
     _load_custom_functions(session)
     parties = session.execute(select(Pihak).where(Pihak.transaksi_id == tx.id).order_by(Pihak.urutan)).scalars().all()
@@ -2680,23 +2790,163 @@ def _transaction_context(session: Session, tx: Transaksi, custom_values: Dict[st
     pembeli: List[Dict[str, Any]] = []
     saksi: List[Dict[str, Any]] = []
     peran: Dict[str, List[Dict[str, Any]]] = {}
+
+    # Kumpulkan orang per pihak lebih dulu agar relasi parent/child dapat
+    # dipasang setelah seluruh data terkumpul.
+    party_persons: Dict[str, List[Dict[str, Any]]] = {}
     for p in parties:
         links = session.execute(
             select(PihakEktp).where(PihakEktp.pihak_id == p.id).order_by(PihakEktp.urutan)
         ).scalars().all()
-        ektp_rows = [session.get(Ektp, l.ektp_id) for l in links]
-        for e in ektp_rows:
-            if e is None:
+        persons = [serialize_ektp(e, session) for e in (session.get(Ektp, l.ektp_id) for l in links) if e is not None]
+        party_persons[p.id] = persons
+    parties_by_id = {p.id: p for p in parties}
+    children_map: Dict[str, List[Pihak]] = {}
+    for p in parties:
+        if p.parent_id and p.parent_id in parties_by_id:
+            children_map.setdefault(p.parent_id, []).append(p)
+
+    def flat_children(party: Pihak, depth: int = 0, visited: frozenset[str] = frozenset()) -> List[Dict[str, Any]]:
+        """Child sebagai daftar ORANG (satu e-KTP = satu entri).
+
+        Satu baris pihak bisa memuat beberapa e-KTP (mis. suami-isteri), dan
+        orang yang sama bisa muncul di beberapa role. Entri digabung per
+        e-KTP agar template cukup `#each p.children` + `ektp_paragraph(c)`.
+        """
+        if depth >= 5:
+            return []
+        seen_party = visited | {party.id}
+        result: List[Dict[str, Any]] = []
+        index: Dict[Any, Dict[str, Any]] = {}
+        for child in children_map.get(party.id, []):
+            for person in party_persons.get(child.id, []):
+                key = person.get("id")
+                existing = index.get(key) if key is not None else None
+                if existing is not None:
+                    if child.nama_pihak not in existing["roles"]:
+                        existing["roles"].append(child.nama_pihak)
+                    continue
+                entry: Dict[str, Any] = {
+                    **person,
+                    "role": child.nama_pihak,
+                    "sebutan": child.sebutan_pihak,
+                    "party_id": child.id,
+                    "pihak_id": child.id,
+                    "roles": [child.nama_pihak],
+                    "persons": party_persons.get(child.id, []),
+                }
+                if child.id not in seen_party:
+                    kids = flat_children(child, depth + 1, seen_party)
+                    if kids:
+                        entry["children"] = kids
+                if key is not None:
+                    index[key] = entry
+                result.append(entry)
+        return result
+
+    # Satu orang (e-KTP) bisa muncul pada beberapa baris pihak dengan role
+    # berbeda. Relasi parent/child digabung per orang agar `p.children` tetap
+    # tersedia walau relasi dipasang pada role lain dari orang yang sama.
+    person_parties: Dict[Any, List[str]] = {}
+    for party_id, persons in party_persons.items():
+        for person in persons:
+            key = person.get("id")
+            if key is None:
                 continue
-            data = serialize_ektp(e, session)
-            pihak_data.append({"role": p.nama_pihak, "sebutan": p.sebutan_pihak, **data})
-            peran.setdefault(p.nama_pihak, []).append(data)
+            bucket = person_parties.setdefault(key, [])
+            if party_id not in bucket:
+                bucket.append(party_id)
+
+    flat_children_map: Dict[str, List[Dict[str, Any]]] = {
+        p.id: flat_children(p) for p in parties
+    }
+
+    person_children: Dict[Any, List[Dict[str, Any]]] = {}
+    person_parent: Dict[Any, Optional[Pihak]] = {}
+    for ektp_id, party_ids in person_parties.items():
+        merged: List[Dict[str, Any]] = []
+        index: Dict[Any, Dict[str, Any]] = {}
+        parent: Optional[Pihak] = None
+        for party_id in party_ids:
+            party = parties_by_id.get(party_id)
+            if party is None:
+                continue
+            if parent is None and party.parent_id and party.parent_id in parties_by_id:
+                parent = parties_by_id[party.parent_id]
+            for entry in flat_children_map.get(party_id, []):
+                key = entry.get("id")
+                existing = index.get(key) if key is not None else None
+                if existing is not None:
+                    for role_name in entry.get("roles", []):
+                        if role_name not in existing["roles"]:
+                            existing["roles"].append(role_name)
+                    continue
+                if key is not None:
+                    index[key] = entry
+                merged.append(entry)
+        person_children[ektp_id] = merged
+        person_parent[ektp_id] = parent
+
+    def party_object(
+        party: Pihak, depth: int = 0, visited: frozenset[str] = frozenset()
+    ) -> Dict[str, Any]:
+        persons = party_persons.get(party.id) or []
+        first = persons[0] if persons else {}
+        obj: Dict[str, Any] = {
+            **first,
+            "party_id": party.id,
+            "role": party.nama_pihak,
+            "sebutan": party.sebutan_pihak,
+            "persons": persons,
+        }
+        if depth >= 5:
+            return obj
+        seen = visited | {party.id}
+        kids = [
+            party_object(child, depth + 1, seen)
+            for child in children_map.get(party.id, [])
+            if child.id not in seen
+        ]
+        if kids:
+            obj["children"] = kids
+        parent_id = party.parent_id
+        if parent_id and parent_id in parties_by_id and parent_id not in seen:
+            obj["parent"] = party_object(parties_by_id[parent_id], depth + 1, seen)
+        return obj
+
+    for p in parties:
+        persons = party_persons.get(p.id) or []
+        parent_obj = (
+            party_object(parties_by_id[p.parent_id])
+            if p.parent_id and p.parent_id in parties_by_id
+            else {}
+        )
+        children_obj = flat_children_map.get(p.id, [])
+        for data in persons:
+            ektp_key = data.get("id")
+            person_kids = person_children.get(ektp_key)
+            person_parent_obj = person_parent.get(ektp_key)
+            entry = {
+                "role": p.nama_pihak,
+                "sebutan": p.sebutan_pihak,
+                "party_id": p.id,
+                "pihak_id": p.id,
+                **data,
+                "parent": (
+                    party_object(person_parent_obj)
+                    if person_parent_obj is not None
+                    else parent_obj
+                ),
+                "children": person_kids if person_kids else children_obj,
+            }
+            pihak_data.append(entry)
+            peran.setdefault(p.nama_pihak, []).append(entry)
             if p.nama_pihak in ("PENJUAL", "PELEPAS"):
-                penjual.append(data)
+                penjual.append(entry)
             elif p.nama_pihak in ("PEMBELI", "PENERIMA"):
-                pembeli.append(data)
+                pembeli.append(entry)
             else:
-                saksi.append(data)
+                saksi.append(entry)
 
     ob = session.get(Obyek, tx.obyek_id) if tx.obyek_id else None
     ob_data = serialize_obyek(ob, session) if ob else {}
@@ -2769,13 +3019,10 @@ def _transaction_context(session: Session, tx: Transaksi, custom_values: Dict[st
         "letak": ob_data.get("wilayah") or {},
         "wilayah": ob_data.get("wilayah") or {},
         "sections": _sections_context(session, tx.id),
-        "sections_by_name": {
-            row["nama_item"]: row["detail"] for row in _sections_context(session, tx.id)
-        },
-        "sections_by_name_short": {
-            row["nama_item"]: (row["short_text"] or row["detail"])
-            for row in _sections_context(session, tx.id)
-        },
+        "sections_by_name": _sections_by_name(session, tx.id, "detail"),
+        "sections_by_name_short": _sections_by_name(session, tx.id, "short"),
+        "sections_by_party": _sections_by_party(session, tx.id, "detail"),
+        "sections_by_party_short": _sections_by_party(session, tx.id, "short"),
         "custom": custom,
         "uraian": _uraian_context(session),
         "staff": _staff_context(session)[0],

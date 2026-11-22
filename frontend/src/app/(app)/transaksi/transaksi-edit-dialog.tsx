@@ -40,6 +40,7 @@ interface PihakEdit {
   id: string;
   roles: PihakRoleEdit[];
   ektp: EktpRecord[];
+  parent: string | null;
 }
 
 export function TransaksiEditDialog({
@@ -81,6 +82,7 @@ export function TransaksiEditDialog({
     {
       item_id: number | null;
       uraian_id: number | null;
+      pihak: string | null;
       detail: string;
       short_text: string;
     }[]
@@ -130,6 +132,7 @@ export function TransaksiEditDialog({
         setSelectedObyek(null);
       }
       const grouped = new Map<string, PihakEdit>();
+      const oldToDraft = new Map<string, string>();
       d.pihak.forEach((p, index) => {
         const key = p.ektp.map((e) => e.id).sort().join(",") || `empty-${index}`;
         const existing = grouped.get(key);
@@ -138,15 +141,27 @@ export function TransaksiEditDialog({
           sebutan: p.sebutan,
           pihak_role_id: p.pihak_role_id ?? pihakRoles.find((r) => r.role === p.role)?.id ?? null,
         };
-        if (existing) existing.roles.push(role);
-        else grouped.set(key, { id: `p-${index}`, roles: [role], ektp: p.ektp });
+        if (existing) {
+          existing.roles.push(role);
+          oldToDraft.set(p.id, existing.id);
+        } else {
+          const draftId = `p-${index}`;
+          oldToDraft.set(p.id, draftId);
+          grouped.set(key, { id: draftId, roles: [role], ektp: p.ektp, parent: p.parent_id ?? null });
+        }
       });
-      setPihak(Array.from(grouped.values()));
+      setPihak(
+        Array.from(grouped.values()).map((x) => ({
+          ...x,
+          parent: x.parent ? oldToDraft.get(x.parent) ?? null : null,
+        }))
+      );
       setSelectedSurat(d.surat_ids);
       setSections(
         (d.sections ?? []).map((sec) => ({
           item_id: sec.item_id,
           uraian_id: sec.uraian_id ?? null,
+          pihak: sec.pihak_id ? oldToDraft.get(sec.pihak_id) ?? null : null,
           detail: sec.detail ?? "",
           short_text: sec.short_text ?? "",
         }))
@@ -180,10 +195,32 @@ export function TransaksiEditDialog({
     setEktpForPihak(null);
   };
 
+  const partyLabel = (p: PihakEdit) =>
+    `${p.roles.map((r) => r.role).join("/") || "Pihak"}${
+      p.ektp[0] ? ` — ${p.ektp[0].nama}` : ""
+    }`;
+
+  const isPartyDescendant = (candidateId: string, partyId: string): boolean => {
+    const seen = new Set<string>();
+    let current = pihak.find((x) => x.id === candidateId);
+    while (current?.parent) {
+      if (current.parent === partyId) return true;
+      if (seen.has(current.id)) break;
+      seen.add(current.id);
+      current = pihak.find((x) => x.id === current!.parent);
+    }
+    return false;
+  };
+
+  const firstRoleKey = (draftId: string) => {
+    const draft = pihak.find((x) => x.id === draftId);
+    return draft && draft.roles[0] ? `${draft.id}:0` : "";
+  };
+
   const addSection = () =>
     setSections((list) => [
       ...list,
-      { item_id: null, uraian_id: null, detail: "", short_text: "" },
+      { item_id: null, uraian_id: null, pihak: null, detail: "", short_text: "" },
     ]);
 
   const updateSection = (
@@ -191,6 +228,7 @@ export function TransaksiEditDialog({
     patch: Partial<{
       item_id: number | null;
       uraian_id: number | null;
+      pihak: string | null;
       detail: string;
       short_text: string;
     }>
@@ -214,17 +252,23 @@ export function TransaksiEditDialog({
         nomor_transaksi: form.nomor_transaksi,
         pihak: pihak
           .filter((p) => p.ektp.length > 0)
-          .flatMap((p) => p.roles.map((r) => ({
-            role: r.role,
-            sebutan: r.sebutan,
-            pihak_role_id: r.pihak_role_id ?? undefined,
-            ektp_ids: p.ektp.map((e) => e.id),
-          }))),
+          .flatMap((p) => {
+            const parentKey = p.parent ? firstRoleKey(p.parent) : "";
+            return p.roles.map((r, ri) => ({
+              role: r.role,
+              sebutan: r.sebutan,
+              pihak_role_id: r.pihak_role_id ?? undefined,
+              ektp_ids: p.ektp.map((e) => e.id),
+              key: `${p.id}:${ri}`,
+              parent_key: parentKey,
+            }));
+          }),
         sections: sections
           .filter((sec) => sec.item_id)
           .map((sec) => ({
             item_id: sec.item_id as number,
             uraian_id: sec.uraian_id,
+            pihak_key: sec.pihak ? `${sec.pihak}:0` : "",
             detail: sec.detail,
             short_text: sec.short_text,
           })),
@@ -427,12 +471,54 @@ export function TransaksiEditDialog({
                       size="icon"
                       variant="ghost"
                       className="size-8 text-destructive"
-                      onClick={() => setPihak((list) => list.filter((x) => x.id !== p.id))}
+                      onClick={() =>
+                        setPihak((list) =>
+                          list
+                            .filter((x) => x.id !== p.id)
+                            .map((x) => (x.parent === p.id ? { ...x, parent: null } : x))
+                        )
+                      }
                     >
                       <Trash2 className="size-4" />
                     </Button>
                   </div>
                 </div>
+                <div className="mt-2 max-w-sm space-y-1.5">
+                  <Label className="text-[11.5px]">Induk Pihak (parent)</Label>
+                  <Select
+                    value={p.parent ?? "none"}
+                    onValueChange={(v) =>
+                      setPihak((list) =>
+                        list.map((x) =>
+                          x.id === p.id ? { ...x, parent: v === "none" ? null : v } : x
+                        )
+                      )
+                    }
+                  >
+                    <SelectTrigger className="h-8 text-[12px]">
+                      <SelectValue placeholder="Tanpa induk" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Tanpa induk</SelectItem>
+                      {pihak
+                        .filter(
+                          (x) =>
+                            x.id !== p.id &&
+                            x.ektp.length > 0 &&
+                            !isPartyDescendant(x.id, p.id)
+                        )
+                        .map((x) => (
+                          <SelectItem key={x.id} value={x.id}>
+                            {partyLabel(x)}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10.5px] text-muted-foreground">
+                    Template: {`{{parent}}`} dan {`{{children}}`}.
+                  </p>
+                </div>
+
                 {p.ektp.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {p.ektp.map((e) => (
@@ -492,7 +578,7 @@ export function TransaksiEditDialog({
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => setPihak((p) => [...p, { id: `p-${Date.now()}`, roles: [{ role: "SAKSI", sebutan: "SAKSI" }], ektp: [] }])}
+              onClick={() => setPihak((p) => [...p, { id: `p-${Date.now()}`, roles: [{ role: "SAKSI", sebutan: "SAKSI" }], ektp: [], parent: null }])}
             >
               <Plus className="size-3.5" /> Tambah Pihak
             </Button>
@@ -562,6 +648,33 @@ export function TransaksiEditDialog({
                         </SelectContent>
                       </Select>
                     </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Pihak (untuk section per pihak)</Label>
+                    <Select
+                      value={sec.pihak ?? "none"}
+                      onValueChange={(v) =>
+                        updateSection(index, { pihak: v === "none" ? null : v })
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Tanpa pihak (umum)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Tanpa pihak (umum)</SelectItem>
+                        {pihak
+                          .filter((x) => x.ektp.length > 0)
+                          .map((x) => (
+                            <SelectItem key={x.id} value={x.id}>
+                              {partyLabel(x)}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground">
+                      Dipanggil: {`{{section('Nama Item', 'ROLE')}}`} atau{" "}
+                      {`{{section('Nama Item', p)}}`}.
+                    </p>
                   </div>
                   <div className="space-y-1.5">
                     <Label>Short Text</Label>

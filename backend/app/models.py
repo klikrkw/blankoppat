@@ -408,6 +408,9 @@ class Pihak(Base):
     pihak_role_id = Column(Integer, ForeignKey("pihak_roles.id", ondelete="SET NULL"), nullable=True, index=True)
     nama_pihak = Column(String(40), nullable=False)  # PENJUAL | PEMBELI | PELEPAS | PENERIMA | SAKSI
     sebutan_pihak = Column(String(60), nullable=False)  # PIHAK PERTAMA, ...
+    parent_id = Column(
+        String(36), ForeignKey("pihak.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     urutan = Column(Integer, default=0)
     keterangan = Column(Text, default="")
     created_at = Column(DateTime, default=_now)
@@ -654,6 +657,9 @@ class Section(Base):
     transaksi_id = Column(String(36), ForeignKey("transaksi.id", ondelete="CASCADE"), nullable=False, index=True)
     item_id = Column(Integer, ForeignKey("items.id", ondelete="CASCADE"), nullable=False, index=True)
     uraian_id = Column(Integer, ForeignKey("uraian.id", ondelete="SET NULL"), nullable=True)
+    pihak_id = Column(
+        String(36), ForeignKey("pihak.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     detail = Column(Text, nullable=True)
     short_text = Column(Text, nullable=True)
     urutan = Column(Integer, default=0)
