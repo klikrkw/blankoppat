@@ -60,6 +60,8 @@ const FIELD_GROUPS: FieldGroup[] = [
       { path: "p.parent", desc: "Objek pihak induk (parent) dari item loop", example: "{{#each peran.PENERIMA as p}}{{p.parent.nama}}{{/each}}" },
       { path: "p.parent.parent.nama", desc: "Parent bertingkat (kakek/nenek relasi)", example: "{{p.parent.parent.nama}}" },
       { path: "p.children", desc: "Daftar child (per orang / e-KTP). Satu pihak multi e-KTP tetap dirinci", example: "{{#each p.children as c}}{{ektp_paragraph(c)}}{{/each}}" },
+      { path: "p.has_children", desc: "True jika pihak memiliki child/anak", example: "{{#if p.has_children}}ADA ANAK{{/if}}" },
+      { path: "p.has_parent", desc: "True jika pihak memiliki parent/induk", example: "{{#if p.has_parent}}ADA PARENT{{/if}}" },
       { path: "c.roles", desc: "Semua role child tersebut (mis. PELEPAS dan PEMBERI_KUASA)", example: "{{#if c.roles contains 'PEMBERI_KUASA'}}...{{/if}}" },
       { path: "p.children[0].nama", desc: "Child pertama", example: "{{p.children[0].nama}}" },
     ],
@@ -240,6 +242,8 @@ const FUNCTIONS: FunctionItem[] = [
   { name: "concat", desc: "Gabung teks", example: "{{concat(pihak.nama, ', ', pihak.alamat)}}" },
   { name: "default", desc: "Nilai fallback jika kosong", example: "{{default(pihak.nama, '-')}}" },
   { name: "count", desc: "Jumlah item dalam daftar", example: "{{count(peran.PENJUAL)}}" },
+  { name: "has_children", desc: "Cek apakah pihak memiliki child/anak", example: "{{#if has_children(p)}}...{{/if}}" },
+  { name: "has_parent", desc: "Cek apakah pihak memiliki parent/induk", example: "{{#if has_parent(p)}}...{{/if}}" },
   { name: "odd", desc: "Cek nomor ganjil untuk filter where", example: "{{#each pihak where odd(@number)}}...{{/each}}" },
   { name: "even", desc: "Cek nomor genap untuk filter where", example: "{{#each pihak where even(@number)}}...{{/each}}" },
   { name: "umur", desc: "Umur dalam tahun dari tanggal lahir", example: "{{umur(pihak.tanggal_lahir)}}" },
@@ -309,6 +313,7 @@ const BLOCK_GUIDE: BlockGuideSection[] = [
       { syntax: "{{#if kondisi}} ... {{else}} ... {{/if}}", note: "Dua cabang." },
       { syntax: "{{#if a}} ... {{else if b}} ... {{else}} ... {{/if}}", note: "Banyak cabang." },
       { syntax: "{{#if custom.fasilitas contains 'AC'}} ... {{/if}}", note: "Cek isi multi select / teks." },
+      { syntax: "{{#if pihak.roles contains 'PELEPAS' or contains 'PENERIMA_KUASA'}} ... {{/if}}", note: "Bentuk singkat: subjek contains diulang otomatis." },
       { syntax: "{{#if 'Parkir' in custom.fasilitas}} ... {{/if}}", note: "Alternatif pengecekan list." },
     ],
     operators: "Operator: ==  !=  >  <  >=  <=  contains  not contains  in  —  gabungkan dengan and / or / not dan tanda kurung ( ).",
@@ -394,6 +399,10 @@ const SNIPPETS = [
     code: `{{#with peran.PENERIMA[0] as p}}\n{{p.nama}} — {{p.nik}} — {{p.wilayah.desa}}\n{{/with}}\n\n{{#each peran.PENJUAL}}\n{{#with this as x}}{{x.nama}};{{/with}}\n{{/each}}`,
   },
   {
+    title: "Cek parent / child pihak",
+    code: `{{#each peran.PENERIMA as p}}\n{{#if has_parent(p)}}Parent: {{p.parent.nama}}{{/if}}\n{{#if has_children(p)}}\n{{#each p.children as c}}- {{c.nama}}\n{{/each}}\n{{/if}}\n{{/each}}`,
+  },
+  {
     title: "Kondisi multi select",
     code: `{{#if custom.fasilitas contains 'AC'}}\nAda AC\n{{else}}\nTidak ada AC\n{{/if}}\n\n{{#if custom.fasilitas not contains 'Wifi'}}Tanpa Wifi{{/if}}\n{{#if 'Parkir' in custom.fasilitas}}Ada Parkir{{/if}}\n{{#if custom.fasilitas contains 'AC' and count(custom.fasilitas) > 2}}Lengkap{{/if}}`,
   },
@@ -420,6 +429,14 @@ const SNIPPETS = [
   {
     title: "Kondisi gabungan (and / or / not)",
     code: `{{#if (count(peran.PENJUAL) > 1 and count(peran.PEMBELI) > 0) or count(peran.SAKSI) > 0}}\nTampilkan bagian ini\n{{else}}\nTampilkan bagian lain\n{{/if}}`,
+  },
+  {
+    title: "Cek beberapa role pihak",
+    code: `{{#if pihak.roles contains 'PELEPAS' or contains 'PENERIMA_KUASA'}}\nPihak ini PELEPAS atau PENERIMA_KUASA\n{{/if}}`,
+  },
+  {
+    title: "Penerima tanpa wali",
+    code: `{{#if peran.PENERIMA and not peran.WALI}}\nPenerima tanpa wali\n{{else}}\nAda wali atau tidak ada penerima\n{{/if}}`,
   },
 ];
 

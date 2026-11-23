@@ -309,6 +309,19 @@ export default function DokumenBaruPage() {
   const peranContext = useMemo(() => {
     const map: Record<string, Record<string, unknown>[]> = {};
 
+    // Semua role per orang/e-KTP, meskipun role dipasang pada baris pihak
+    // berbeda. Dipakai untuk `p.roles contains 'WALI'`.
+    const rolesByEktp = new Map<number, string[]>();
+    for (const draft of pihakList) {
+      for (const r of draft.roles) {
+        for (const e of draft.ektp) {
+          const roles = rolesByEktp.get(e.id) ?? [];
+          if (!roles.includes(r.role)) roles.push(r.role);
+          rolesByEktp.set(e.id, roles);
+        }
+      }
+    }
+
     // Child = daftar ORANG (satu e-KTP satu entri), sama seperti backend.
     const childPersons = (
       draft: PihakDraft,
@@ -334,11 +347,16 @@ export default function DokumenBaruPage() {
             role,
             sebutan,
             party_id: child.id,
-            roles: [role],
+            roles: rolesByEktp.get(e.id) ?? [role],
             persons: child.ektp,
+            has_parent: true,
+            has_children: false,
           };
           const kids = childPersons(child, depth + 1, seen);
-          if (kids.length) entry.children = kids;
+          if (kids.length) {
+            entry.children = kids;
+            entry.has_children = true;
+          }
           index.set(e.id, entry);
           result.push(entry);
         }
@@ -356,15 +374,24 @@ export default function DokumenBaruPage() {
         ...first,
         party_id: draft.id,
         role: draft.roles[0]?.role ?? "",
+        roles: draft.roles.map((r) => r.role),
         sebutan: draft.roles[0]?.sebutan ?? "",
         persons: draft.ektp,
+        has_parent: false,
+        has_children: false,
       };
       if (depth >= 5) return obj;
       const seen = new Set(visited).add(draft.id);
       const kids = childPersons(draft, depth + 1, seen);
-      if (kids.length) obj.children = kids;
+      if (kids.length) {
+        obj.children = kids;
+        obj.has_children = true;
+      }
       const parent = draft.parent ? pihakList.find((x) => x.id === draft.parent) : undefined;
-      if (parent && !seen.has(parent.id)) obj.parent = summary(parent, depth + 1, seen);
+      if (parent && !seen.has(parent.id)) {
+        obj.parent = summary(parent, depth + 1, seen);
+        obj.has_parent = true;
+      }
       return obj;
     };
     for (const p of pihakList) {
@@ -376,9 +403,12 @@ export default function DokumenBaruPage() {
           (map[r.role] ||= []).push({
             ...e,
             role: r.role,
+            roles: rolesByEktp.get(e.id) ?? [r.role],
             sebutan: r.sebutan,
             parent: parentObj,
             children: childrenObj,
+            has_parent: Boolean(parent),
+            has_children: childrenObj.length > 0,
           });
         }
       }

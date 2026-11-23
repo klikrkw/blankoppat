@@ -90,6 +90,30 @@ def _even(value: Any) -> bool:
         return False
 
 
+def _has_children(value: Any) -> bool:
+    if isinstance(value, dict):
+        children = value.get("children")
+        if isinstance(children, (list, tuple, dict)):
+            return len(children) > 0
+        return bool(value.get("has_children"))
+    if isinstance(value, (list, tuple)):
+        return len(value) > 0
+    return False
+
+
+def _has_parent(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    parent = value.get("parent")
+    if isinstance(parent, dict):
+        return len(parent) > 0
+    if isinstance(parent, (list, tuple)):
+        return len(parent) > 0
+    if parent not in (None, ""):
+        return True
+    return bool(value.get("has_parent"))
+
+
 def _gelar_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
 
@@ -231,6 +255,8 @@ FUNCTIONS: Dict[str, Tuple[Any, str]] = {
     "default": (_default, "Nilai fallback jika kosong"),
     "sebutan": (_sebutan, "Sebutan Tuan/Nona/Nyonya berdasarkan jenis kelamin & status perkawinan"),
     "count": (_count, "Jumlah item dalam daftar (list)"),
+    "has_children": (_has_children, "True jika pihak memiliki child/anak"),
+    "has_parent": (_has_parent, "True jika pihak memiliki parent/induk"),
     "odd": (_odd, "True jika nomor ganjil (untuk filter where)"),
     "even": (_even, "True jika nomor genap (untuk filter where)"),
     "penerima_phb": (
@@ -738,7 +764,13 @@ def _section_contains(context: Dict[str, Any], args: List[Any]) -> bool:
         slug = re.sub(r"[^a-z0-9]+", "_", role.lower()).strip("_")
         bucket = maps.get(role) or maps.get(slug) or {}
         if isinstance(bucket, dict):
-            return any(str(name).strip().lower() == needle for name in bucket)
+            if any(str(name).strip().lower() == needle for name in bucket):
+                return True
+
+    # Fallback terakhir: section umum, selaras dengan section('X', p).
+    general = context.get("sections_by_name") or {}
+    if isinstance(general, dict):
+        return any(str(name).strip().lower() == needle for name in general)
     return False
 
 

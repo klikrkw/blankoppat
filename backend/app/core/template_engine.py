@@ -10,7 +10,7 @@ Mendukung syntax:
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .functions import eval_expr, resolve_path
 
@@ -94,16 +94,47 @@ def _split_top(expr: str, word: str) -> List[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+def _condition_subject(expr: str) -> str:
+    """Ambil sisi kiri dari ekspresi kondisi (untuk bentuk singkat contains)."""
+    expr = expr.strip()
+    containment = re.match(r"(.+?)\s+(not\s+contains|contains|in)\s+(.+)", expr, re.IGNORECASE)
+    if containment:
+        return containment.group(1).strip()
+    comparison = re.match(r"(.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)", expr)
+    if comparison:
+        return comparison.group(1).strip()
+    return expr
+
+
+def _fill_implicit_left(part: str, previous: Optional[str]) -> tuple[str, str]:
+    """Ubah `contains 'B'` menjadi `<subjek sebelumnya> contains 'B'`."""
+    part = part.strip()
+    match = re.match(r"(not\s+contains|contains|in)\s+(.+)", part, re.IGNORECASE)
+    if match and previous:
+        return f"{previous} {match.group(1)} {match.group(2)}", previous
+    return part, _condition_subject(part)
+
+
 def _eval_condition(expr: str, context: Dict[str, Any]) -> bool:
     expr = _strip_parens(expr)
 
     or_parts = _split_top(expr, "or")
     if len(or_parts) > 1:
-        return any(_eval_condition(p, context) for p in or_parts)
+        expanded = []
+        previous = None
+        for part in or_parts:
+            part, previous = _fill_implicit_left(part, previous)
+            expanded.append(part)
+        return any(_eval_condition(p, context) for p in expanded)
 
     and_parts = _split_top(expr, "and")
     if len(and_parts) > 1:
-        return all(_eval_condition(p, context) for p in and_parts)
+        expanded = []
+        previous = None
+        for part in and_parts:
+            part, previous = _fill_implicit_left(part, previous)
+            expanded.append(part)
+        return all(_eval_condition(p, context) for p in expanded)
 
     if re.match(r"(?i)^not\b", expr):
         return not _eval_condition(re.sub(r"(?i)^not\b", "", expr, count=1), context)

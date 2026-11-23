@@ -534,6 +534,8 @@ export const builtInFunctions = [
   { name: "tanggal_huruf", description: "Tanggal format huruf (10 Januari 1985)", example: "{{tanggal_huruf(custom.tanggal_akta)}}" },
   { name: "format_date", description: "Format tanggal Indonesia", example: "{{format_date(pihak.tanggal_lahir, 'DD MMMM YYYY')}}" },
   { name: "find", description: "Cari object di dalam array object", example: "{{find(pihak, peran.PENJUAL).nama}}" },
+  { name: "has_children", description: "Cek apakah pihak memiliki child/anak", example: "{{#if has_children(p)}}...{{/if}}" },
+  { name: "has_parent", description: "Cek apakah pihak memiliki parent/induk", example: "{{#if has_parent(p)}}...{{/if}}" },
   { name: "odd", description: "Cek nomor ganjil untuk filter where", example: "{{#each pihak where odd(@number)}}...{{/each}}" },
   { name: "even", description: "Cek nomor genap untuk filter where", example: "{{#each pihak where even(@number)}}...{{/each}}" },
   { name: "penerima_phb", description: "Daftar pihak yang cocok dengan filter, bernomor sesuai posisi aslinya", example: "{{penerima_phb(peran.PELEPAS, peran.PENERIMA)}}" },

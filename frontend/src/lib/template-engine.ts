@@ -576,7 +576,12 @@ function sectionExists(
         return true;
       }
     }
-    return false;
+    // Fallback terakhir: section umum, selaras dengan section('X', p).
+    const general = ctx.sections_by_name as Record<string, string> | undefined;
+    return Boolean(
+      general &&
+        Object.keys(general).some((k) => k.trim().toLowerCase() === key)
+    );
   }
 
   if (matches.length > 0) return true;
@@ -830,6 +835,24 @@ const FUNCTIONS = {
     String(v ?? "").slice(Number(start), end === undefined ? undefined : Number(end)),
   count: (v: unknown) =>
     Array.isArray(v) ? v.length : typeof v === "object" && v !== null ? Object.keys(v as object).length : 0,
+  has_children: (v: unknown) => {
+    if (Array.isArray(v)) return v.length > 0;
+    if (isRecord(v)) {
+      const children = v.children;
+      if (Array.isArray(children)) return children.length > 0;
+      if (isRecord(children)) return Object.keys(children).length > 0;
+      return Boolean(v.has_children);
+    }
+    return false;
+  },
+  has_parent: (v: unknown) => {
+    if (!isRecord(v)) return false;
+    const parent = v.parent;
+    if (isRecord(parent)) return Object.keys(parent).length > 0;
+    if (Array.isArray(parent)) return parent.length > 0;
+    if (parent !== null && parent !== undefined && parent !== "") return true;
+    return Boolean(v.has_parent);
+  },
   odd: (v: unknown) => {
     try {
       return Math.trunc(calcToNumber(v)) % 2 !== 0;
@@ -953,14 +976,49 @@ function splitTop(expr: string, word: string): string[] {
   return parts.map((p) => p.trim()).filter(Boolean);
 }
 
+function conditionSubject(expr: string): string {
+  const e = expr.trim();
+  const containment = e.match(/^(.+?)\s+(not\s+contains|contains|in)\s+(.+)$/i);
+  if (containment) return containment[1].trim();
+  const comparison = e.match(/^(.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)$/);
+  if (comparison) return comparison[1].trim();
+  return e;
+}
+
+function fillImplicitLeft(
+  part: string,
+  previous?: string
+): [string, string] {
+  const p = part.trim();
+  const m = p.match(/^(not\s+contains|contains|in)\s+(.+)$/i);
+  if (m && previous) return [`${previous} ${m[1]} ${m[2]}`, previous];
+  return [p, conditionSubject(p)];
+}
+
 function evalCondition(expr: string, ctx: Record<string, unknown>): boolean {
   const e = stripParens(expr);
 
   const orParts = splitTop(e, "or");
-  if (orParts.length > 1) return orParts.some((p) => evalCondition(p, ctx));
+  if (orParts.length > 1) {
+    let previous: string | undefined;
+    const expanded = orParts.map((part) => {
+      const [next, subject] = fillImplicitLeft(part, previous);
+      previous = subject;
+      return next;
+    });
+    return expanded.some((p) => evalCondition(p, ctx));
+  }
 
   const andParts = splitTop(e, "and");
-  if (andParts.length > 1) return andParts.every((p) => evalCondition(p, ctx));
+  if (andParts.length > 1) {
+    let previous: string | undefined;
+    const expanded = andParts.map((part) => {
+      const [next, subject] = fillImplicitLeft(part, previous);
+      previous = subject;
+      return next;
+    });
+    return expanded.every((p) => evalCondition(p, ctx));
+  }
 
   if (/^not\b/i.test(e)) {
     return !evalCondition(e.replace(/^not\b/i, ""), ctx);

@@ -2846,13 +2846,16 @@ def _transaction_context(session: Session, tx: Transaksi, custom_values: Dict[st
                     "sebutan": child.sebutan_pihak,
                     "party_id": child.id,
                     "pihak_id": child.id,
-                    "roles": [child.nama_pihak],
+                    "roles": person_roles.get(key) or [child.nama_pihak],
                     "persons": party_persons.get(child.id, []),
+                    "has_parent": True,
+                    "has_children": False,
                 }
                 if child.id not in seen_party:
                     kids = flat_children(child, depth + 1, seen_party)
                     if kids:
                         entry["children"] = kids
+                        entry["has_children"] = True
                 if key is not None:
                     index[key] = entry
                 result.append(entry)
@@ -2870,6 +2873,17 @@ def _transaction_context(session: Session, tx: Transaksi, custom_values: Dict[st
             bucket = person_parties.setdefault(key, [])
             if party_id not in bucket:
                 bucket.append(party_id)
+
+    # Semua role untuk satu orang, meskipun role dipasang pada baris pihak
+    # berbeda. Dipakai untuk kondisi `p.roles contains 'WALI'` dll.
+    person_roles: Dict[Any, List[str]] = {}
+    for ektp_key, party_ids in person_parties.items():
+        roles: List[str] = []
+        for party_id in party_ids:
+            party = parties_by_id.get(party_id)
+            if party and party.nama_pihak and party.nama_pihak not in roles:
+                roles.append(party.nama_pihak)
+        person_roles[ektp_key] = roles
 
     flat_children_map: Dict[str, List[Dict[str, Any]]] = {
         p.id: flat_children(p) for p in parties
@@ -2910,8 +2924,11 @@ def _transaction_context(session: Session, tx: Transaksi, custom_values: Dict[st
             **first,
             "party_id": party.id,
             "role": party.nama_pihak,
+            "roles": [party.nama_pihak],
             "sebutan": party.sebutan_pihak,
             "persons": persons,
+            "has_parent": False,
+            "has_children": False,
         }
         if depth >= 5:
             return obj
@@ -2923,9 +2940,11 @@ def _transaction_context(session: Session, tx: Transaksi, custom_values: Dict[st
         ]
         if kids:
             obj["children"] = kids
+            obj["has_children"] = True
         parent_id = party.parent_id
         if parent_id and parent_id in parties_by_id and parent_id not in seen:
             obj["parent"] = party_object(parties_by_id[parent_id], depth + 1, seen)
+            obj["has_parent"] = True
         return obj
 
     for p in parties:
@@ -2940,18 +2959,23 @@ def _transaction_context(session: Session, tx: Transaksi, custom_values: Dict[st
             ektp_key = data.get("id")
             person_kids = person_children.get(ektp_key)
             person_parent_obj = person_parent.get(ektp_key)
+            parent_value = (
+                party_object(person_parent_obj)
+                if person_parent_obj is not None
+                else parent_obj
+            )
+            children_value = person_kids if person_kids else children_obj
             entry = {
                 "role": p.nama_pihak,
+                "roles": person_roles.get(ektp_key) or [p.nama_pihak],
                 "sebutan": p.sebutan_pihak,
                 "party_id": p.id,
                 "pihak_id": p.id,
                 **data,
-                "parent": (
-                    party_object(person_parent_obj)
-                    if person_parent_obj is not None
-                    else parent_obj
-                ),
-                "children": person_kids if person_kids else children_obj,
+                "parent": parent_value,
+                "children": children_value,
+                "has_parent": bool(parent_value),
+                "has_children": bool(children_value),
             }
             pihak_data.append(entry)
             peran.setdefault(p.nama_pihak, []).append(entry)
