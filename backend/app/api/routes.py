@@ -50,6 +50,9 @@ from ..models import (
     Obyek,
     Pekerjaan,
     Gelar,
+    Jabatan,
+    Pejabat,
+    TransaksiPejabat,
     Provinsi,
     PaymentBankAccount,
     Pihak,
@@ -300,6 +303,49 @@ def _gelar_context(session: Session) -> Dict[str, str]:
     return result
 
 
+def _pejabat_context(session: Session, transaksi_id: str) -> List[Dict[str, Any]]:
+    if session is None or not transaksi_id:
+        return []
+    result: List[Dict[str, Any]] = []
+    rows = session.execute(
+        select(Pejabat)
+        .join(TransaksiPejabat, TransaksiPejabat.pejabat_id == Pejabat.id)
+        .where(TransaksiPejabat.transaksi_id == transaksi_id)
+        .order_by(TransaksiPejabat.urutan, Pejabat.id)
+    ).scalars().all()
+    for row in rows:
+        jabatan = session.get(Jabatan, row.jabatan_id) if row.jabatan_id else None
+        ektp_row = session.get(Ektp, row.ektp_id)
+        wilayah = session.get(Wilayah, row.wilayah_id) if row.wilayah_id else None
+        data: Dict[str, Any] = serialize_ektp(ektp_row) if ektp_row else {}
+        data.update(
+            {
+                "pejabat_id": row.id,
+                "jabatan_id": row.jabatan_id,
+                "nama_jabatan": jabatan.nama_jabatan if jabatan else "",
+                "role_name": row.role_name,
+                "ektp_id": row.ektp_id,
+                "wilayah_id": row.wilayah_id,
+                "wilayah": (
+                    {
+                        "id": wilayah.id,
+                        "kode_wilayah": wilayah.kode_wilayah,
+                        "desa": wilayah.desa,
+                        "tipe_desa": wilayah.tipe_desa,
+                        "kecamatan": wilayah.kecamatan,
+                        "kabupaten": wilayah.kabupaten,
+                        "tipe_kabupaten": wilayah.tipe_kabupaten,
+                        "provinsi": wilayah.provinsi,
+                    }
+                    if wilayah
+                    else {}
+                ),
+            }
+        )
+        result.append(data)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
@@ -355,6 +401,17 @@ class SectionInput(BaseModel):
     short_text: str = ""
 
 
+class PejabatInput(BaseModel):
+    jabatan_id: Optional[int] = None
+    ektp_id: int
+    wilayah_id: Optional[int] = None
+    role_name: str = "perangkat_desa"
+
+
+class JabatanCreate(BaseModel):
+    nama_jabatan: str
+
+
 class TransaksiCreate(BaseModel):
     jenistransaksi_id: int
     obyek_id: Optional[int] = None
@@ -364,6 +421,7 @@ class TransaksiCreate(BaseModel):
     keterangan: str = ""
     pihak: List[PihakInput] = Field(default_factory=list)
     sections: List[SectionInput] = Field(default_factory=list)
+    pejabat_ids: List[int] = Field(default_factory=list)
 
 
 class TransaksiUpdate(BaseModel):
@@ -375,6 +433,7 @@ class TransaksiUpdate(BaseModel):
     keterangan: str = ""
     pihak: List[PihakInput] = Field(default_factory=list)
     sections: Optional[List[SectionInput]] = None
+    pejabat_ids: Optional[List[int]] = None
     surat_ids: List[str] = Field(default_factory=list)
     custom_fields: Dict[str, Any] = Field(default_factory=dict)
 
@@ -2458,6 +2517,7 @@ def create_transaksi(
                 urutan=idx,
             )
         )
+    _save_transaksi_pejabat(session, tx.id, body.pejabat_ids)
     add_audit(session, user["id"], "CREATE_TRANSACTION", "transaksi", tx.id, f"Transaksi {body.judul} dibuat")
     session.commit()
     return {
@@ -2534,6 +2594,14 @@ def _serialize_transaksi_detail(tx: Transaksi, session: Session) -> Dict[str, An
             }
         )
 
+    pejabat_rows = session.execute(
+        select(Pejabat)
+        .join(TransaksiPejabat, TransaksiPejabat.pejabat_id == Pejabat.id)
+        .where(TransaksiPejabat.transaksi_id == tx.id)
+        .order_by(TransaksiPejabat.urutan, Pejabat.id)
+    ).scalars().all()
+    pejabat_out = [_serialize_pejabat_row(row, session) for row in pejabat_rows]
+
     return {
         "id": tx.id,
         "jenistransaksi_id": tx.jenistransaksi_id,
@@ -2545,6 +2613,8 @@ def _serialize_transaksi_detail(tx: Transaksi, session: Session) -> Dict[str, An
         "keterangan": tx.keterangan,
         "pihak": pihak_out,
         "sections": sections_out,
+        "pejabat": pejabat_out,
+        "pejabat_ids": [row.id for row in pejabat_rows],
         "surat_ids": surat_ids,
         "custom_fields": stored,
     }
@@ -2638,6 +2708,81 @@ def _save_pihak_rows(
             seen.add(cur)
             cur = parent_of.get(cur)
     return key_map
+
+
+PEJABAT_ROLES = {"kepala_desa", "perangkat_desa"}
+
+
+def _validate_pejabat_fields(
+    session: Session,
+    role_name: str,
+    ektp_id: int,
+    jabatan_id: Optional[int],
+    wilayah_id: Optional[int],
+) -> str:
+    role = (role_name or "").strip().lower()
+    if role not in PEJABAT_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail="role_name pejabat harus kepala_desa atau perangkat_desa",
+        )
+    if session.get(Ektp, ektp_id) is None:
+        raise HTTPException(status_code=400, detail="e-KTP pejabat tidak ditemukan")
+    if jabatan_id is not None and session.get(Jabatan, jabatan_id) is None:
+        raise HTTPException(status_code=400, detail="Jabatan pejabat tidak ditemukan")
+    if wilayah_id is not None and session.get(Wilayah, wilayah_id) is None:
+        raise HTTPException(status_code=400, detail="Wilayah pejabat tidak ditemukan")
+    return role
+
+
+def _serialize_pejabat_row(row: Pejabat, session: Session) -> Dict[str, Any]:
+    jabatan = session.get(Jabatan, row.jabatan_id) if row.jabatan_id else None
+    ektp_row = session.get(Ektp, row.ektp_id)
+    wilayah = session.get(Wilayah, row.wilayah_id) if row.wilayah_id else None
+    return {
+        "id": row.id,
+        "jabatan_id": row.jabatan_id,
+        "nama_jabatan": jabatan.nama_jabatan if jabatan else "",
+        "ektp_id": row.ektp_id,
+        "nama": ektp_row.nama if ektp_row else "",
+        "nik": ektp_row.nik if ektp_row else "",
+        "wilayah_id": row.wilayah_id,
+        "wilayah": (
+            {
+                "id": wilayah.id,
+                "kode_wilayah": wilayah.kode_wilayah,
+                "desa": wilayah.desa,
+                "tipe_desa": wilayah.tipe_desa,
+                "kecamatan": wilayah.kecamatan,
+                "kabupaten": wilayah.kabupaten,
+                "tipe_kabupaten": wilayah.tipe_kabupaten,
+                "provinsi": wilayah.provinsi,
+            }
+            if wilayah
+            else None
+        ),
+        "role_name": row.role_name,
+        "ektp": serialize_ektp(ektp_row) if ektp_row else None,
+    }
+
+
+def _save_transaksi_pejabat(
+    session: Session, transaksi_id: str, pejabat_ids: List[int]
+) -> None:
+    seen: set[int] = set()
+    for idx, pejabat_id in enumerate(pejabat_ids, start=1):
+        if pejabat_id in seen:
+            continue
+        seen.add(pejabat_id)
+        if session.get(Pejabat, pejabat_id) is None:
+            raise HTTPException(status_code=400, detail="Pejabat tidak ditemukan")
+        session.add(
+            TransaksiPejabat(
+                transaksi_id=transaksi_id,
+                pejabat_id=pejabat_id,
+                urutan=idx,
+            )
+        )
 
 
 @router.delete("/transaksi/{tx_id}")
@@ -2734,9 +2879,15 @@ def update_transaksi(
                 )
             )
 
+    # Ganti relasi pejabat hanya jika dikirim (None = pertahankan yang lama)
+    if body.pejabat_ids is not None:
+        session.execute(
+            text("DELETE FROM transaksi_pejabat WHERE transaksi_id = :t"), {"t": tx.id}
+        )
+        _save_transaksi_pejabat(session, tx.id, body.pejabat_ids)
+
     # Simpan custom field value
     _persist_custom_values(session, tx.id, body.custom_fields)
-
     # Regenerate dokumen bila transaksi sudah punya dokumen, agar nomor/tanggal
     # di dokumen ikut ter-update sesuai data terbaru.
     existing_docs = session.execute(
@@ -3036,6 +3187,11 @@ def _transaction_context(session: Session, tx: Transaksi, custom_values: Dict[st
                 "tipe_kabupaten": sw.tipe_kabupaten,
                 "provinsi": sw.provinsi,
             }
+    pejabat_data = _pejabat_context(session, tx.id)
+    pejabat_by_role: Dict[str, List[Dict[str, Any]]] = {}
+    for row in pejabat_data:
+        pejabat_by_role.setdefault(str(row.get("role_name") or ""), []).append(row)
+
     return {
         "transaksi": {
             "nomor_transaksi": tx.nomor_transaksi,
@@ -3064,6 +3220,8 @@ def _transaction_context(session: Session, tx: Transaksi, custom_values: Dict[st
         "custom": custom,
         "uraian": _uraian_context(session),
         "gelar": _gelar_context(session),
+        "pejabat": pejabat_data,
+        "pejabat_by_role": pejabat_by_role,
         "staff": _staff_context(session)[0],
         "staff_by_job": _staff_context(session)[1],
         "system": {
@@ -4052,6 +4210,215 @@ def delete_pekerjaan(
     if not p:
         raise HTTPException(status_code=404, detail="Pekerjaan tidak ditemukan")
     session.delete(p)
+    session.commit()
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
+# Jabatan & Pejabat
+# ---------------------------------------------------------------------------
+
+
+@router.get("/jabatan")
+def list_jabatan(
+    search: str = Query(""),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=1000),
+    session: Session = Depends(session_dep),
+    user: dict = Depends(get_current_user),
+):
+    stmt = select(Jabatan)
+    if search:
+        stmt = stmt.where(Jabatan.nama_jabatan.like(f"%{search}%"))
+    total = session.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
+    rows = (
+        session.execute(
+            stmt.order_by(Jabatan.nama_jabatan)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "data": [
+            {"id": row.id, "nama_jabatan": row.nama_jabatan}
+            for row in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.post("/jabatan")
+def create_jabatan(
+    body: JabatanCreate,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(require_admin),
+):
+    nama = body.nama_jabatan.strip()
+    if not nama:
+        raise HTTPException(status_code=400, detail="Nama jabatan wajib diisi")
+    duplicate = session.execute(
+        select(Jabatan.id).where(func.lower(Jabatan.nama_jabatan) == nama.lower())
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=400, detail="Nama jabatan sudah digunakan")
+    row = Jabatan(nama_jabatan=nama)
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return {"id": row.id, "nama_jabatan": row.nama_jabatan}
+
+
+@router.put("/jabatan/{id}")
+def update_jabatan(
+    id: int,
+    body: JabatanCreate,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(require_admin),
+):
+    row = session.get(Jabatan, id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Jabatan tidak ditemukan")
+    nama = body.nama_jabatan.strip()
+    if not nama:
+        raise HTTPException(status_code=400, detail="Nama jabatan wajib diisi")
+    duplicate = session.execute(
+        select(Jabatan.id).where(
+            func.lower(Jabatan.nama_jabatan) == nama.lower(), Jabatan.id != id
+        )
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=400, detail="Nama jabatan sudah digunakan")
+    row.nama_jabatan = nama
+    session.commit()
+    session.refresh(row)
+    return {"id": row.id, "nama_jabatan": row.nama_jabatan}
+
+
+@router.delete("/jabatan/{id}")
+def delete_jabatan(
+    id: int,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(require_admin),
+):
+    row = session.get(Jabatan, id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Jabatan tidak ditemukan")
+    session.delete(row)
+    session.commit()
+    return {"success": True}
+
+
+@router.get("/pejabat")
+def list_pejabat(
+    search: str = Query(""),
+    wilayah_id: Optional[int] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=1000),
+    session: Session = Depends(session_dep),
+    user: dict = Depends(get_current_user),
+):
+    stmt = select(Pejabat)
+    if wilayah_id is not None:
+        stmt = stmt.where(Pejabat.wilayah_id == wilayah_id)
+    if search:
+        like = f"%{search}%"
+        stmt = (
+            stmt.join(Ektp, Ektp.id == Pejabat.ektp_id, isouter=True)
+            .join(Jabatan, Jabatan.id == Pejabat.jabatan_id, isouter=True)
+            .join(Wilayah, Wilayah.id == Pejabat.wilayah_id, isouter=True)
+            .where(
+                Ektp.nama.like(like)
+                | Ektp.nik.like(like)
+                | Jabatan.nama_jabatan.like(like)
+                | Pejabat.role_name.like(like)
+                | Wilayah.desa.like(like)
+                | Wilayah.kecamatan.like(like)
+            )
+        )
+    total = session.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
+    rows = (
+        session.execute(
+            stmt.order_by(Pejabat.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        .scalars()
+        .all()
+    )
+    data = []
+    for row in rows:
+        item = _serialize_pejabat_row(row, session)
+        item["transaksi_count"] = session.execute(
+            select(func.count())
+            .select_from(TransaksiPejabat)
+            .where(TransaksiPejabat.pejabat_id == row.id)
+        ).scalar_one()
+        data.append(item)
+    return {
+        "data": data,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.post("/pejabat")
+def create_pejabat(
+    body: PejabatInput,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(require_admin),
+):
+    role = _validate_pejabat_fields(
+        session, body.role_name, body.ektp_id, body.jabatan_id, body.wilayah_id
+    )
+    row = Pejabat(
+        jabatan_id=body.jabatan_id,
+        ektp_id=body.ektp_id,
+        wilayah_id=body.wilayah_id,
+        role_name=role,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return _serialize_pejabat_row(row, session)
+
+
+@router.put("/pejabat/{id}")
+def update_pejabat(
+    id: int,
+    body: PejabatInput,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(require_admin),
+):
+    row = session.get(Pejabat, id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Pejabat tidak ditemukan")
+    role = _validate_pejabat_fields(
+        session, body.role_name, body.ektp_id, body.jabatan_id, body.wilayah_id
+    )
+    row.jabatan_id = body.jabatan_id
+    row.ektp_id = body.ektp_id
+    row.wilayah_id = body.wilayah_id
+    row.role_name = role
+    session.commit()
+    session.refresh(row)
+    return _serialize_pejabat_row(row, session)
+
+
+@router.delete("/pejabat/{id}")
+def delete_pejabat(
+    id: int,
+    session: Session = Depends(session_dep),
+    user: dict = Depends(require_admin),
+):
+    row = session.get(Pejabat, id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Pejabat tidak ditemukan")
+    session.delete(row)
     session.commit()
     return {"success": True}
 

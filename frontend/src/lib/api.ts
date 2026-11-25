@@ -10,6 +10,8 @@ import type {
   EktpRecord,
   FunctionItem,
   Gelar,
+  Jabatan,
+  Pejabat,
   Invoice,
   Job,
   Staff,
@@ -331,6 +333,87 @@ export const api = {
   async deleteGelar(id: number): Promise<void> {
     await delay(200);
     return apiFetch(`/api/v1/gelar/${id}`, { method: "DELETE" });
+  },
+
+  // ---- Jabatan ----
+  async listJabatan(search = "", page = 1, pageSize = 100) {
+    await delay(80);
+    return apiFetch<{
+      data: Jabatan[];
+      total: number;
+      page: number;
+      page_size: number;
+    }>("/api/v1/jabatan", { query: { search, page, page_size: pageSize } });
+  },
+
+  async createJabatan(nama_jabatan: string): Promise<Jabatan> {
+    await delay(200);
+    return apiFetch<Jabatan>("/api/v1/jabatan", {
+      method: "POST",
+      json: { nama_jabatan },
+    });
+  },
+
+  async updateJabatan(id: number, nama_jabatan: string): Promise<Jabatan> {
+    await delay(200);
+    return apiFetch<Jabatan>(`/api/v1/jabatan/${id}`, {
+      method: "PUT",
+      json: { nama_jabatan },
+    });
+  },
+
+  async deleteJabatan(id: number): Promise<void> {
+    await delay(200);
+    return apiFetch(`/api/v1/jabatan/${id}`, { method: "DELETE" });
+  },
+
+  // ---- Pejabat ----
+  async listPejabat(search = "", page = 1, pageSize = 10, wilayahId?: number) {
+    await delay(80);
+    return apiFetch<{
+      data: Pejabat[];
+      total: number;
+      page: number;
+      page_size: number;
+    }>("/api/v1/pejabat", {
+      query: {
+        search,
+        page,
+        page_size: pageSize,
+        wilayah_id: wilayahId,
+      },
+    });
+  },
+
+  async createPejabat(data: {
+    jabatan_id: number | null;
+    ektp_id: number;
+    wilayah_id: number | null;
+    role_name: string;
+  }): Promise<Pejabat> {
+    await delay(200);
+    return apiFetch<Pejabat>("/api/v1/pejabat", { method: "POST", json: data });
+  },
+
+  async updatePejabat(
+    id: number,
+    data: {
+      jabatan_id: number | null;
+      ektp_id: number;
+      wilayah_id: number | null;
+      role_name: string;
+    }
+  ): Promise<Pejabat> {
+    await delay(200);
+    return apiFetch<Pejabat>(`/api/v1/pejabat/${id}`, {
+      method: "PUT",
+      json: data,
+    });
+  },
+
+  async deletePejabat(id: number): Promise<void> {
+    await delay(200);
+    return apiFetch(`/api/v1/pejabat/${id}`, { method: "DELETE" });
   },
 
   // ---- Edisi ----
@@ -834,6 +917,8 @@ export const api = {
       ektp: EktpRecord[];
     }[];
     sections?: SectionItem[];
+    pejabat?: Pejabat[];
+    pejabat_ids?: number[];
     surat_ids: string[];
     custom_fields: Record<string, unknown>;
   }> {
@@ -865,6 +950,7 @@ export const api = {
         detail: string;
         short_text?: string;
       }[];
+      pejabat_ids?: number[];
       surat_ids: string[];
       custom_fields: Record<string, unknown>;
     }
@@ -898,6 +984,7 @@ export const api = {
               })),
             }
           : {}),
+        ...(input.pejabat_ids ? { pejabat_ids: input.pejabat_ids } : {}),
         surat_ids: input.surat_ids,
         custom_fields: input.custom_fields,
       },
@@ -927,6 +1014,7 @@ export const api = {
         detail: string;
         short_text?: string;
       }[];
+    pejabat_ids?: number[];
   }): Promise<Transaksi> {
     await delay(350);
     return apiFetch<Transaksi>("/api/v1/transaksi", {
@@ -953,6 +1041,7 @@ export const api = {
           detail: sec.detail,
           short_text: sec.short_text ?? "",
         })),
+        pejabat_ids: input.pejabat_ids ?? [],
       },
     });
   },

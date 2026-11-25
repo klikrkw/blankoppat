@@ -189,6 +189,16 @@ const FIELD_GROUPS: FieldGroup[] = [
     ],
   },
   {
+    title: "Pejabat",
+    description: "Data pejabat yang terhubung dengan transaksi (menu Data → Pejabat).",
+    items: [
+      { path: "pejabat", desc: "Daftar pejabat pada transaksi", example: "{{#each pejabat}}{{nama_jabatan}} — {{nama}}{{/each}}" },
+      { path: "pejabat_by_role.kepala_desa", desc: "Daftar pejabat dengan role tertentu", example: "{{#each pejabat_by_role.kepala_desa}}{{nama}}{{/each}}" },
+      { path: "pejabat('kepala_desa').nama", desc: "Ambil satu pejabat berdasarkan role_name", example: "{{pejabat('kepala_desa').nama}}" },
+      { path: "pejabat('perangkat_desa', 'nik')", desc: "Ambil field tertentu dari pejabat", example: "{{pejabat('perangkat_desa', 'nik')}}" },
+    ],
+  },
+  {
     title: "Sistem / Kantor",
     description: "Data kantor dari menu Settings.",
     items: [
@@ -225,6 +235,7 @@ const FUNCTIONS: FunctionItem[] = [
   { name: "terbilang_pihak", desc: "Urutan pihak: Pertama, Kedua, Ketiga, Keempat, dst.", example: "{{terbilang_pihak(@number)}}" },
   { name: "eval", desc: "Hitung ekspresi aritmetika dengan variabel", example: "{{eval('custom.harga_transaksi * 0.05')}}" },
   { name: "gelar_panjang", desc: "Ganti singkatan gelar dengan kepanjangan dari master Gelar", example: "{{gelar_panjang(system.company_name)}}" },
+  { name: "pejabat", desc: "Ambil pejabat berdasarkan role_name", example: "{{pejabat('kepala_desa').nama}}" },
   { name: "find", desc: "Cari object di dalam array object", example: "{{find(pihak, peran.PENJUAL).nama}}" },
   { name: "penerima_phb", desc: "Daftar pihak yang cocok, bernomor sesuai posisi aslinya", example: "{{penerima_phb(peran.PELEPAS, peran.PENERIMA)}}" },
   { name: "terbilang_tanggal", desc: "Tanggal menjadi terbilang", example: "{{terbilang_tanggal(custom.tanggal_akta)}}" },

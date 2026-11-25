@@ -55,6 +55,7 @@ import type {
   JenisTransaksi,
   Obyek,
   SuratCollectionItem,
+  Pejabat,
 } from "@/lib/types";
 
 const STEPS = [
@@ -62,6 +63,7 @@ const STEPS = [
   "Data Transaksi",
   "Objek Tanah",
   "Pihak",
+  "Pejabat",
   "Sections",
   "Custom Field",
   "Pilih Surat",
@@ -130,6 +132,9 @@ export default function DokumenBaruPage() {
   const [itemList, setItemList] = useState<Item[]>([]);
   const [uraianList, setUraianList] = useState<Uraian[]>([]);
   const [gelarMap, setGelarMap] = useState<Record<string, string>>({});
+  const [pejabatResults, setPejabatResults] = useState<Pejabat[]>([]);
+  const [selectedPejabat, setSelectedPejabat] = useState<Pejabat[]>([]);
+  const [pejabatSearch, setPejabatSearch] = useState("");
   const [ektpSearch, setEktpSearch] = useState("");
   const [ektpResults, setEktpResults] = useState<EktpRecord[]>([]);
   const [ektpForPihak, setEktpForPihak] = useState<string | null>(null);
@@ -183,6 +188,21 @@ export default function DokumenBaruPage() {
     return () => clearTimeout(t);
   }, [ektpSearch]);
 
+  const objectWilayahId =
+    obyekDetail?.wilayah_id ?? obyekDetail?.wilayah?.id ?? null;
+
+  useEffect(() => {
+    if (step !== 4) return;
+    if (!objectWilayahId) return;
+    const t = setTimeout(() => {
+      api
+        .listPejabat(pejabatSearch, 1, 50, objectWilayahId)
+        .then((r) => setPejabatResults(r.data))
+        .catch(() => setPejabatResults([]));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [pejabatSearch, step, objectWilayahId]);
+
   const pathname = usePathname();
   const previousPath = useRef(pathname);
 
@@ -206,6 +226,9 @@ export default function DokumenBaruPage() {
     setSections([]);
     setEktpSearch("");
     setEktpForPihak(null);
+    setSelectedPejabat([]);
+    setPejabatSearch("");
+    setPejabatResults([]);
     setSelectedSurat([]);
     setCollection([]);
     setContentByTemplate({});
@@ -494,6 +517,14 @@ export default function DokumenBaruPage() {
       custom: values,
       uraian: uraianContext,
       gelar: gelarMap,
+      pejabat: selectedPejabat,
+      pejabat_by_role: selectedPejabat.reduce<Record<string, Pejabat[]>>(
+        (acc, p) => {
+          (acc[p.role_name] ||= []).push(p);
+          return acc;
+        },
+        {}
+      ),
       system: {
         company_name: "PPAT & Notaris Ahmad Fauzi, S.H., M.Kn.",
       },
@@ -512,6 +543,7 @@ export default function DokumenBaruPage() {
     itemList,
     uraianList,
     gelarMap,
+    selectedPejabat,
   ]);
 
   const previewDoc = useMemo(() => {
@@ -575,7 +607,7 @@ export default function DokumenBaruPage() {
             : c.tanggal_akta,
       }));
     }
-    if (step === 5) {
+    if (step === 6) {
       const missing = activeCustomFields
         .filter((f) => {
           if (!f.required) return false;
@@ -590,7 +622,7 @@ export default function DokumenBaruPage() {
         return false;
       }
     }
-    if (step === 6) {
+    if (step === 7) {
       if (selectedSurat.length === 0) {
         toast.error("Pilih minimal satu surat");
         return false;
@@ -704,6 +736,7 @@ export default function DokumenBaruPage() {
             detail: sec.detail,
             short_text: sec.short_text,
           })),
+        pejabat_ids: selectedPejabat.map((p) => p.id),
       });
       const docs = await api.generateDocuments({
         transaksi_id: createdTx.id,
@@ -907,7 +940,11 @@ export default function DokumenBaruPage() {
               {obyekList.map((o) => (
                 <button
                   key={o.id}
-                  onClick={() => setObyekId(o.id)}
+                  onClick={() => {
+                    setObyekId(o.id);
+                    setSelectedPejabat([]);
+                    setPejabatResults([]);
+                  }}
                   className={cn(
                     "rounded-xl border bg-card p-4 text-left transition-all hover:border-primary/50 hover:shadow-sm",
                     obyekId === o.id
@@ -1123,8 +1160,125 @@ export default function DokumenBaruPage() {
         </div>
       )}
 
-      {/* STEP 4 — Sections */}
+      {/* STEP 4 — Pejabat */}
       {step === 4 && (
+        <div className="max-w-3xl space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-[13px] text-muted-foreground">
+              Cari dan pilih pejabat dari master data. Satu transaksi dapat memiliki
+              lebih dari satu pejabat.
+            </p>
+            <Link
+              href="/data/pejabat"
+              className="shrink-0 text-[12.5px] font-medium text-primary underline"
+            >
+              Kelola Pejabat
+            </Link>
+          </div>
+
+          <div className="relative max-w-md">
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={pejabatSearch}
+              onChange={(e) => setPejabatSearch(e.target.value)}
+              placeholder="Cari nama, NIK, jabatan, atau wilayah..."
+              className="pl-9"
+            />
+          </div>
+
+          {selectedPejabat.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Pejabat terpilih
+              </p>
+              {selectedPejabat.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-3 rounded-xl border bg-muted/30 p-3"
+                >
+                  <UserRound className="size-4 shrink-0 text-primary" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-semibold">{p.nama}</p>
+                    <p className="text-[11.5px] text-muted-foreground">
+                      {p.nama_jabatan || "-"} ·{" "}
+                      {p.role_name === "kepala_desa"
+                        ? "Kepala Desa"
+                        : "Perangkat Desa"}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 text-destructive"
+                    onClick={() =>
+                      setSelectedPejabat((list) =>
+                        list.filter((item) => item.id !== p.id)
+                      )
+                    }
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <p className="text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+              Hasil pencarian
+            </p>
+            {pejabatResults.length === 0 ? (
+              <EmptyState
+                icon={UserRound}
+                title="Pejabat tidak ditemukan"
+                description="Ubah kata kunci atau tambahkan master pejabat di menu Data → Pejabat."
+              />
+            ) : (
+              pejabatResults.map((p) => {
+                const checked = selectedPejabat.some((x) => x.id === p.id);
+                return (
+                  <label
+                    key={p.id}
+                    className="flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/40"
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(v) =>
+                        setSelectedPejabat((list) =>
+                          v
+                            ? list.some((x) => x.id === p.id)
+                              ? list
+                              : [...list, p]
+                            : list.filter((x) => x.id !== p.id)
+                        )
+                      }
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold">{p.nama}</p>
+                      <p className="font-mono text-[11px] text-muted-foreground">
+                        {p.nik}
+                      </p>
+                      <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                        {p.nama_jabatan || "-"} ·{" "}
+                        {p.role_name === "kepala_desa"
+                          ? "Kepala Desa"
+                          : "Perangkat Desa"}
+                        {p.wilayah
+                          ? ` · ${p.wilayah.desa}, ${p.wilayah.kecamatan}`
+                          : ""}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* STEP 5 — Sections */}
+      {step === 5 && (
         <div className="space-y-4">
           <p className="text-[13px] text-muted-foreground">
             Section menghubungkan item dengan uraian. Detail terisi otomatis dari uraian dan masih
@@ -1283,8 +1437,8 @@ export default function DokumenBaruPage() {
         </div>
       )}
 
-      {/* STEP 5 — Custom Field */}
-      {step === 5 && (
+      {/* STEP 6 — Custom Field */}
+      {step === 6 && (
         <div className="max-w-2xl space-y-5">
           {fieldGroups.map((g) => {
             const fields = activeCustomFields.filter((f) => f.group_id === g.id);
@@ -1312,8 +1466,8 @@ export default function DokumenBaruPage() {
         </div>
       )}
 
-      {/* STEP 6 — Pilih Surat */}
-      {step === 6 && (
+      {/* STEP 7 — Pilih Surat */}
+      {step === 7 && (
         <div>
           <p className="mb-3 text-[13px] text-muted-foreground">
             Koleksi surat untuk jenis transaksi{" "}
@@ -1376,8 +1530,8 @@ export default function DokumenBaruPage() {
         </div>
       )}
 
-      {/* STEP 7 — Preview */}
-      {step === 7 && (
+      {/* STEP 8 — Preview */}
+      {step === 8 && (
         <div className="grid gap-6 lg:grid-cols-2">
           <Card className="border shadow-none">
             <CardHeader className="pb-3">
@@ -1466,7 +1620,7 @@ export default function DokumenBaruPage() {
         </div>
       )}
 
-      {step === 7 && generated.length > 0 && (
+      {step === 8 && generated.length > 0 && (
         <Card className="border-emerald-500/40 bg-emerald-500/5 shadow-none">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-[15px] text-emerald-700 dark:text-emerald-400">

@@ -310,6 +310,20 @@ def list_functions() -> List[dict]:
     )
     items.append(
         {
+            "name": "pejabat",
+            "description": "Ambil pejabat berdasarkan role_name, mis. pejabat('kepala_desa').nama",
+            "built_in": True,
+        }
+    )
+    items.append(
+        {
+            "name": "pejabat_list",
+            "description": "Ambil semua pejabat berdasarkan role_name (list)",
+            "built_in": True,
+        }
+    )
+    items.append(
+        {
             "name": "gelar_panjang",
             "description": "Ganti singkatan gelar dengan kepanjangan dari master Gelar",
             "built_in": True,
@@ -774,6 +788,39 @@ def _section_contains(context: Dict[str, Any], args: List[Any]) -> bool:
     return False
 
 
+def _pejabat_role_key(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+
+
+def _find_pejabat(context: Dict[str, Any], role: Any, field: Any = "") -> Any:
+    """Ambil satu pejabat berdasarkan role_name."""
+    target = _pejabat_role_key(role)
+    if not target:
+        return None
+    for row in context.get("pejabat") or []:
+        if not isinstance(row, dict):
+            continue
+        if _pejabat_role_key(row.get("role_name")) != target:
+            continue
+        if field:
+            return resolve_path(row, str(field))
+        return row
+    return None
+
+
+def _find_pejabat_list(context: Dict[str, Any], role: Any) -> List[Dict[str, Any]]:
+    """Ambil semua pejabat dengan role_name tertentu."""
+    target = _pejabat_role_key(role)
+    if not target:
+        return []
+    return [
+        row
+        for row in (context.get("pejabat") or [])
+        if isinstance(row, dict)
+        and _pejabat_role_key(row.get("role_name")) == target
+    ]
+
+
 def eval_expr(expr: str, context: Dict[str, Any]) -> Any:
     """Evaluasi ekspresi template: path atau pemanggilan function."""
     trimmed = expr.strip()
@@ -790,6 +837,16 @@ def eval_expr(expr: str, context: Dict[str, Any]) -> Any:
     match = re.fullmatch(r"([a-zA-Z_]\w*)\s*\(([\s\S]*)\)", trimmed)
     if match:
         name, raw_args = match.groups()
+        if name == "pejabat":
+            args = _tokens(raw_args, context)
+            return _find_pejabat(
+                context,
+                args[0] if args else "",
+                args[1] if len(args) > 1 else "",
+            )
+        if name == "pejabat_list":
+            args = _tokens(raw_args, context)
+            return _find_pejabat_list(context, args[0] if args else "")
         if name == "eval":
             return _eval_calculation(raw_args, context)
         if name == "find":

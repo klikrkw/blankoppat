@@ -763,6 +763,44 @@ function expandGelar(value: unknown, mapping: unknown): string {
   });
 }
 
+function pejabatRoleKey(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function findPejabat(
+  ctx: Record<string, unknown>,
+  role: unknown,
+  field?: unknown
+): unknown {
+  const target = pejabatRoleKey(role);
+  if (!target) return undefined;
+  const rows = Array.isArray(ctx.pejabat)
+    ? (ctx.pejabat as Record<string, unknown>[])
+    : [];
+  const row = rows.find(
+    (item) => pejabatRoleKey(item.role_name) === target
+  );
+  if (!row) return undefined;
+  if (field) return resolvePath(row, String(field));
+  return row;
+}
+
+function pejabatByRoleList(
+  ctx: Record<string, unknown>,
+  role: unknown
+): Record<string, unknown>[] {
+  const target = pejabatRoleKey(role);
+  if (!target) return [];
+  const rows = Array.isArray(ctx.pejabat)
+    ? (ctx.pejabat as Record<string, unknown>[])
+    : [];
+  return rows.filter((item) => pejabatRoleKey(item.role_name) === target);
+}
+
 export function evalExpr(
   expr: string,
   ctx: Record<string, unknown>
@@ -783,6 +821,12 @@ export function evalExpr(
   if (fnMatch) {
     const [, name, rawArgs] = fnMatch;
     const args = tokenizeArgs(rawArgs).map((a) => evalArg(a, ctx));
+    if (name === "pejabat") {
+      return findPejabat(ctx, args[0], args[1]);
+    }
+    if (name === "pejabat_list") {
+      return pejabatByRoleList(ctx, args[0]);
+    }
     if (name === "eval") {
       return evalCalculation(rawArgs, ctx);
     }

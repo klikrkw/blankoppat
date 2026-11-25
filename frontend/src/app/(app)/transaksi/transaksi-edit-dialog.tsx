@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { CustomField, CustomFieldGroup, EktpRecord, Item, JenisTransaksi, PihakRoleItem, SuratCollectionItem, Transaksi, Uraian } from "@/lib/types";
+import type { CustomField, CustomFieldGroup, EktpRecord, Item, JenisTransaksi, PihakRoleItem, SuratCollectionItem, Transaksi, Uraian, Pejabat } from "@/lib/types";
 
 type EditTarget = Transaksi & { jenistransaksi?: { nama_jenistransaksi: string } };
 
@@ -55,9 +55,9 @@ export function TransaksiEditDialog({
   onSaved: () => void;
 }) {
   const [jenisList, setJenisList] = useState<JenisTransaksi[]>([]);
-  const [obyekList, setObyekList] = useState<{ id: number; nomor_hak: string; atas_nama: string }[]>([]);
+  const [obyekList, setObyekList] = useState<{ id: number; nomor_hak: string; atas_nama: string; wilayah_id?: number | null }[]>([]);
   const [obyekSearch, setObyekSearch] = useState("");
-  const [selectedObyek, setSelectedObyek] = useState<{ id: number; nomor_hak: string; atas_nama: string } | null>(null);
+  const [selectedObyek, setSelectedObyek] = useState<{ id: number; nomor_hak: string; atas_nama: string; wilayah_id?: number | null } | null>(null);
   const [form, setForm] = useState({
     jenistransaksi_id: 0,
     nomor_transaksi: "",
@@ -89,6 +89,9 @@ export function TransaksiEditDialog({
   >([]);
   const [itemList, setItemList] = useState<Item[]>([]);
   const [uraianList, setUraianList] = useState<Uraian[]>([]);
+  const [pejabatResults, setPejabatResults] = useState<Pejabat[]>([]);
+  const [selectedPejabat, setSelectedPejabat] = useState<Pejabat[]>([]);
+  const [pejabatSearch, setPejabatSearch] = useState("");
 
   useEffect(() => {
     api.listJenistransaksi().then(setJenisList);
@@ -104,7 +107,7 @@ export function TransaksiEditDialog({
     if (obyekSearch.trim()) {
       const t = setTimeout(() => {
         api.listObyek(obyekSearch, 1, 8).then((r) =>
-          setObyekList(r.data.map((o) => ({ id: o.id, nomor_hak: o.nomor_hak, atas_nama: o.atas_nama })))
+          setObyekList(r.data.map((o) => ({ id: o.id, nomor_hak: o.nomor_hak, atas_nama: o.atas_nama, wilayah_id: o.wilayah_id })))
         );
       }, 250);
       return () => clearTimeout(t);
@@ -125,7 +128,7 @@ export function TransaksiEditDialog({
       if (d.obyek_id) {
         api.getObyek(d.obyek_id).then((o) => {
           if (o) {
-            setSelectedObyek({ id: o.id, nomor_hak: o.nomor_hak, atas_nama: o.atas_nama });
+            setSelectedObyek({ id: o.id, nomor_hak: o.nomor_hak, atas_nama: o.atas_nama, wilayah_id: o.wilayah_id });
           }
         });
       } else {
@@ -167,6 +170,8 @@ export function TransaksiEditDialog({
         }))
       );
       setCustomValues((d.custom_fields as Record<string, unknown>) ?? {});
+      setSelectedPejabat(d.pejabat ?? []);
+      setPejabatSearch("");
       api.getSuratCollection(d.jenistransaksi_id).then(setCollection);
     });
   }, [target, open, pihakRoles]);
@@ -179,6 +184,20 @@ export function TransaksiEditDialog({
       return () => clearTimeout(t);
     }
   }, [ektpSearch]);
+
+  const objectWilayahId = selectedObyek?.wilayah_id ?? null;
+
+  useEffect(() => {
+    if (!open) return;
+    if (!objectWilayahId) return;
+    const t = setTimeout(() => {
+      api
+        .listPejabat(pejabatSearch, 1, 50, objectWilayahId)
+        .then((r) => setPejabatResults(r.data))
+        .catch(() => setPejabatResults([]));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [pejabatSearch, open, objectWilayahId]);
 
   const changeJenis = (jenisId: number) => {
     setForm((f) => ({ ...f, jenistransaksi_id: jenisId }));
@@ -272,6 +291,7 @@ export function TransaksiEditDialog({
             detail: sec.detail,
             short_text: sec.short_text,
           })),
+        pejabat_ids: selectedPejabat.map((p) => p.id),
         surat_ids: selectedSurat,
         custom_fields: customValues,
       });
@@ -297,6 +317,7 @@ export function TransaksiEditDialog({
             <TabsList className="mb-3 flex flex-wrap">
               <TabsTrigger value="data">Data</TabsTrigger>
               <TabsTrigger value="pihak">Pihak</TabsTrigger>
+              <TabsTrigger value="pejabat">Pejabat</TabsTrigger>
               <TabsTrigger value="sections">Sections</TabsTrigger>
               <TabsTrigger value="custom">Custom Field</TabsTrigger>
               <TabsTrigger value="surat">Surat</TabsTrigger>
@@ -374,6 +395,8 @@ export function TransaksiEditDialog({
                           onClick={() => {
                             setForm((f) => ({ ...f, obyek_id: o.id }));
                             setSelectedObyek(o);
+                            setSelectedPejabat([]);
+                            setPejabatResults([]);
                             setObyekList([]);
                             setObyekSearch("");
                           }}
@@ -583,6 +606,117 @@ export function TransaksiEditDialog({
               <Plus className="size-3.5" /> Tambah Pihak
             </Button>
           </div>
+            </TabsContent>
+            <TabsContent value="pejabat" className="mt-0 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-[12px] text-muted-foreground">
+                  Cari dan pilih pejabat dari master data. Bisa lebih dari satu.
+                </p>
+                <a
+                  href="/data/pejabat"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="shrink-0 text-[12px] font-medium text-primary underline"
+                >
+                  Kelola Pejabat
+                </a>
+              </div>
+
+              <div className="relative">
+                <Search className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={pejabatSearch}
+                  onChange={(e) => setPejabatSearch(e.target.value)}
+                  placeholder="Cari nama, NIK, jabatan, atau wilayah..."
+                  className="h-8 pl-8 text-[12.5px]"
+                />
+              </div>
+
+              {selectedPejabat.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                    Pejabat terpilih
+                  </p>
+                  {selectedPejabat.map((row) => (
+                    <div
+                      key={row.id}
+                      className="flex items-center gap-3 rounded-lg border bg-muted/30 p-2.5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[12.5px] font-semibold">{row.nama}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {row.nama_jabatan || "-"} ·{" "}
+                          {row.role_name === "kepala_desa"
+                            ? "Kepala Desa"
+                            : "Perangkat Desa"}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-destructive"
+                        onClick={() =>
+                          setSelectedPejabat((list) =>
+                            list.filter((item) => item.id !== row.id)
+                          )
+                        }
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <p className="text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                  Hasil pencarian
+                </p>
+                {pejabatResults.length === 0 ? (
+                  <p className="text-[12px] text-muted-foreground">
+                    Pejabat tidak ditemukan.
+                  </p>
+                ) : (
+                  pejabatResults.map((row) => {
+                    const checked = selectedPejabat.some((x) => x.id === row.id);
+                    return (
+                      <label
+                        key={row.id}
+                        className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/40"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) =>
+                            setSelectedPejabat((list) =>
+                              v
+                                ? list.some((x) => x.id === row.id)
+                                  ? list
+                                  : [...list, row]
+                                : list.filter((x) => x.id !== row.id)
+                            )
+                          }
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[12.5px] font-semibold">{row.nama}</p>
+                          <p className="font-mono text-[10.5px] text-muted-foreground">
+                            {row.nik}
+                          </p>
+                          <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                            {row.nama_jabatan || "-"} ·{" "}
+                            {row.role_name === "kepala_desa"
+                              ? "Kepala Desa"
+                              : "Perangkat Desa"}
+                            {row.wilayah
+                              ? ` · ${row.wilayah.desa}, ${row.wilayah.kecamatan}`
+                              : ""}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
             </TabsContent>
             <TabsContent value="sections" className="mt-0 space-y-3">
               {sections.length === 0 && (

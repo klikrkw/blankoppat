@@ -530,6 +530,7 @@ export const builtInFunctions = [
   { name: "terbilang_pihak", description: "Urutan pihak: Pertama, Kedua, Ketiga, Keempat, dst.", example: "{{terbilang_pihak(@number)}}" },
   { name: "eval", description: "Hitung ekspresi aritmetika dengan variabel", example: "{{eval('custom.harga_transaksi * 0.05')}}" },
   { name: "gelar_panjang", description: "Ganti singkatan gelar dengan kepanjangan dari master Gelar", example: "{{gelar_panjang(system.company_name)}}" },
+  { name: "pejabat", description: "Ambil pejabat berdasarkan role_name", example: "{{pejabat('kepala_desa').nama}}" },
   { name: "terbilang_tanggal", description: "Mengubah tanggal menjadi terbilang", example: "{{terbilang_tanggal(custom.tanggal_akta)}}" },
   { name: "tanggal_huruf", description: "Tanggal format huruf (10 Januari 1985)", example: "{{tanggal_huruf(custom.tanggal_akta)}}" },
   { name: "format_date", description: "Format tanggal Indonesia", example: "{{format_date(pihak.tanggal_lahir, 'DD MMMM YYYY')}}" },

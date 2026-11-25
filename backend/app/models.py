@@ -608,6 +608,49 @@ class Gelar(Base):
     kepanjangan = Column(String(150), nullable=False)
 
 
+class Jabatan(Base):
+    __tablename__ = "jabatan"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    nama_jabatan = Column(String(150), nullable=False, unique=True, index=True)
+
+
+class Pejabat(Base):
+    __tablename__ = "pejabat"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    jabatan_id = Column(
+        Integer, ForeignKey("jabatan.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    ektp_id = Column(
+        BigInteger, ForeignKey("ektp.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    wilayah_id = Column(
+        Integer, ForeignKey("wilayah.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    role_name = Column(String(30), nullable=False, default="perangkat_desa", index=True)
+    created_at = Column(DateTime, default=_now)
+    updated_at = Column(DateTime, default=_now, onupdate=_now)
+
+
+class TransaksiPejabat(Base):
+    __tablename__ = "transaksi_pejabat"
+
+    transaksi_id = Column(
+        String(36),
+        ForeignKey("transaksi.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+    pejabat_id = Column(
+        Integer,
+        ForeignKey("pejabat.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    )
+    urutan = Column(Integer, default=0)
+
+
 class Uraian(Base):
     __tablename__ = "uraian"
 

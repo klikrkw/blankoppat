@@ -358,6 +358,25 @@ export interface Gelar {
   kepanjangan: string;
 }
 
+export interface Jabatan {
+  id: number;
+  nama_jabatan: string;
+}
+
+export interface Pejabat {
+  id: number;
+  jabatan_id: number | null;
+  nama_jabatan: string;
+  ektp_id: number;
+  wilayah_id: number | null;
+  nama: string;
+  nik: string;
+  role_name: string;
+  transaksi_count?: number;
+  ektp?: EktpRecord | null;
+  wilayah?: Wilayah | null;
+}
+
 export interface Uraian {
   id: number;
   nama_uraian: string;
