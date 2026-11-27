@@ -1295,17 +1295,29 @@ function renderBlocks(text: string, ctx: Record<string, unknown>): string {
   return out.replace(placeholderRe, (match) => {
     const expr = match.slice(2, -2).trim();
     if (expr.startsWith("#") || expr.startsWith("/")) return "";
+    if (expr === "\\t") return "\t";
+    if (expr === "\\n") return "\n";
     const value = evalExpr(expr, ctx);
     if (value === undefined || value === null || value === "") return "-";
     return String(value);
   });
 }
 
+function decodeTemplateSymbols(text: string): string {
+  return text
+    .replace(/\{\{\s*\\n\s*\}\}/gi, "\n")
+    .replace(/\{\{\s*\\t\s*\}\}/gi, "\t")
+    .split("\\n")
+    .join("\n")
+    .split("\\t")
+    .join("\t");
+}
+
 export function renderTemplate(
   template: string,
   ctx: Record<string, unknown>
 ): string {
-  return renderBlocks(template, ctx);
+  return renderBlocks(decodeTemplateSymbols(template), ctx);
 }
 
 export function extractVariables(template: string): string[] {

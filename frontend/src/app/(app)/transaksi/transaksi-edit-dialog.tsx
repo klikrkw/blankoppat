@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { formatNumber } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +44,18 @@ interface PihakEdit {
   parent: string | null;
 }
 
+interface ObyekOption {
+  id: number;
+  nomor_hak: string;
+  atas_nama: string;
+  nama_jenishak: string;
+  luas_tanah: number;
+  wilayah_id?: number | null;
+  desa: string;
+  kecamatan: string;
+  kabupaten: string;
+}
+
 export function TransaksiEditDialog({
   target,
   open,
@@ -55,9 +68,9 @@ export function TransaksiEditDialog({
   onSaved: () => void;
 }) {
   const [jenisList, setJenisList] = useState<JenisTransaksi[]>([]);
-  const [obyekList, setObyekList] = useState<{ id: number; nomor_hak: string; atas_nama: string; wilayah_id?: number | null }[]>([]);
+  const [obyekList, setObyekList] = useState<ObyekOption[]>([]);
   const [obyekSearch, setObyekSearch] = useState("");
-  const [selectedObyek, setSelectedObyek] = useState<{ id: number; nomor_hak: string; atas_nama: string; wilayah_id?: number | null } | null>(null);
+  const [selectedObyek, setSelectedObyek] = useState<ObyekOption | null>(null);
   const [form, setForm] = useState({
     jenistransaksi_id: 0,
     nomor_transaksi: "",
@@ -107,7 +120,21 @@ export function TransaksiEditDialog({
     if (obyekSearch.trim()) {
       const t = setTimeout(() => {
         api.listObyek(obyekSearch, 1, 8).then((r) =>
-          setObyekList(r.data.map((o) => ({ id: o.id, nomor_hak: o.nomor_hak, atas_nama: o.atas_nama, wilayah_id: o.wilayah_id })))
+          setObyekList(
+            r.data.map((o) => ({
+              id: o.id,
+              nomor_hak: o.nomor_hak,
+              atas_nama: o.atas_nama,
+              nama_jenishak:
+                (o as { jenishak?: { nama_jenishak?: string } }).jenishak
+                  ?.nama_jenishak ?? "-",
+              luas_tanah: o.luas_tanah,
+              wilayah_id: o.wilayah_id,
+              desa: o.wilayah?.desa ?? o.desa ?? "-",
+              kecamatan: o.wilayah?.kecamatan ?? o.kecamatan ?? "-",
+              kabupaten: o.wilayah?.kabupaten ?? o.kabupaten ?? "-",
+            }))
+          )
         );
       }, 250);
       return () => clearTimeout(t);
@@ -128,7 +155,19 @@ export function TransaksiEditDialog({
       if (d.obyek_id) {
         api.getObyek(d.obyek_id).then((o) => {
           if (o) {
-            setSelectedObyek({ id: o.id, nomor_hak: o.nomor_hak, atas_nama: o.atas_nama, wilayah_id: o.wilayah_id });
+            setSelectedObyek({
+              id: o.id,
+              nomor_hak: o.nomor_hak,
+              atas_nama: o.atas_nama,
+              nama_jenishak:
+                (o as { jenishak?: { nama_jenishak?: string } }).jenishak
+                  ?.nama_jenishak ?? "-",
+              luas_tanah: o.luas_tanah,
+              wilayah_id: o.wilayah_id,
+              desa: o.wilayah?.desa ?? o.desa ?? "-",
+              kecamatan: o.wilayah?.kecamatan ?? o.kecamatan ?? "-",
+              kabupaten: o.wilayah?.kabupaten ?? o.kabupaten ?? "-",
+            });
           }
         });
       } else {
@@ -360,13 +399,21 @@ export function TransaksiEditDialog({
             <div className="space-y-1.5">
               <Label>Objek Tanah</Label>
               {selectedObyek ? (
-                <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2 text-[12.5px]">
-                  <span>
-                    No. {selectedObyek.nomor_hak} — a.n. {selectedObyek.atas_nama}
-                  </span>
+                <div className="flex items-start justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2 text-[12.5px]">
+                  <div className="min-w-0">
+                    <p>
+                      No. {selectedObyek.nomor_hak} — a.n. {selectedObyek.atas_nama}
+                    </p>
+                    <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                      {selectedObyek.nama_jenishak} · Luas{" "}
+                      {formatNumber(selectedObyek.luas_tanah)} m² · Desa{" "}
+                      {selectedObyek.desa} · Kec. {selectedObyek.kecamatan} ·{" "}
+                      {selectedObyek.kabupaten}
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    className="text-muted-foreground hover:text-destructive"
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
                     onClick={() => {
                       setSelectedObyek(null);
                       setForm((f) => ({ ...f, obyek_id: null }));
@@ -402,7 +449,14 @@ export function TransaksiEditDialog({
                           }}
                           className="w-full rounded px-2 py-1 text-left text-[12px] hover:bg-muted"
                         >
-                          No. {o.nomor_hak} — a.n. {o.atas_nama}
+                          <span className="block">
+                            No. {o.nomor_hak} — a.n. {o.atas_nama}
+                          </span>
+                          <span className="block text-[11px] text-muted-foreground">
+                            {o.nama_jenishak} · Luas{" "}
+                            {formatNumber(o.luas_tanah)} m² · Desa {o.desa} ·
+                            Kec. {o.kecamatan} · {o.kabupaten}
+                          </span>
                         </button>
                       ))}
                     </div>

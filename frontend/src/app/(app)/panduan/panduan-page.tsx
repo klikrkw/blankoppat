@@ -627,6 +627,7 @@ export default function PanduanPage() {
                   <li><code>{"{{#if custom.field contains 'Opsi'}}"}</code> — cek multi select</li>
                   <li><code>{"{{else if kondisi}}"}</code> — kondisi bercabang</li>
                   <li><code>and</code>, <code>or</code>, <code>not</code>, kurung — logika kondisi</li>
+                  <li><code>{"{{\\n}}"}</code> dan <code>{"{{\\t}}"}</code> — Enter/tab pada teks template</li>
                   <li><code>{"{{uraian('Nama Uraian')}}"}</code> — ambil master uraian</li>
                 </ul>
               </div>

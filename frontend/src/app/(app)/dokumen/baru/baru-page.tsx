@@ -962,7 +962,12 @@ export default function DokumenBaruPage() {
                         Luas {formatNumber(o.luas_tanah)} m² · NIB {o.nib}
                       </p>
                       <p className="mt-1 text-[12.5px]">
-                        {(o as Obyek & { wilayah?: { desa: string } }).wilayah?.desa ?? "-"} — a.n. {o.atas_nama}
+                        Desa {(o as Obyek & { wilayah?: { desa?: string; kecamatan?: string; kabupaten?: string } }).wilayah?.desa ?? "-"} · Kec.{" "}
+                        {(o as Obyek & { wilayah?: { kecamatan?: string } }).wilayah?.kecamatan ?? "-"} ·{" "}
+                        {(o as Obyek & { wilayah?: { kabupaten?: string } }).wilayah?.kabupaten ?? "-"}
+                      </p>
+                      <p className="text-[12px] text-muted-foreground">
+                        a.n. {o.atas_nama}
                       </p>
                     </div>
                     {obyekId === o.id && <CheckCircle2 className="size-5 shrink-0 text-primary" />}

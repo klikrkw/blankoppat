@@ -17,7 +17,7 @@ from typing import Any, Dict
 
 from lxml import etree
 
-from .template_engine import render_text
+from .template_engine import decode_template_symbols, render_text
 
 import re
 
@@ -946,6 +946,11 @@ def _patch_xml_text(xml_bytes: bytes, context: Dict[str, Any]) -> bytes:
     """Ganti placeholder pada seluruh `<w:t>` di satu bagian XML DOCX."""
     root = etree.fromstring(xml_bytes)
     original = etree.tostring(root)
+    decoded = False
+    for node in root.iter(TAG_T):
+        if node.text and ("\\n" in node.text or "\\t" in node.text):
+            node.text = decode_template_symbols(node.text)
+            decoded = True
     for _ in range(3):
         before = etree.tostring(root)
         _expand_with_blocks(root, context)
@@ -955,7 +960,7 @@ def _patch_xml_text(xml_bytes: bytes, context: Dict[str, Any]) -> bytes:
         _expand_if_blocks(root, context)
         if etree.tostring(root) == before:
             break
-    changed = etree.tostring(root) != original
+    changed = decoded or etree.tostring(root) != original
 
     for p in root.iter(TAG_P):
         if _expand_same_paragraph_blocks(p, context):

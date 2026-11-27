@@ -234,9 +234,16 @@ def _matching_block(text: str, body_start: int, kind: str) -> tuple[str, int | N
     return "", None
 
 
+def decode_template_symbols(value: str) -> str:
+    """Terjemahkan \\n/\\t, termasuk bentuk {{ \\n }} dan {{ \\t }}."""
+    value = re.sub(r"\{\{\s*\\n\s*\}\}", "\n", value or "")
+    value = re.sub(r"\{\{\s*\\t\s*\}\}", "\t", value)
+    return value.replace("\\n", "\n").replace("\\t", "\t")
+
+
 def render_text(template: str, context: Dict[str, Any]) -> str:
     """Render teks template menjadi teks final."""
-    out = template
+    out = decode_template_symbols(template)
 
     # Blok diproses dari yang paling awal (outermost) agar konteks benar
     # untuk blok bersarang: #with, #if, dan #each.
@@ -390,6 +397,10 @@ def render_text(template: str, context: Dict[str, Any]) -> str:
         expr = match.group(1).strip()
         if expr.startswith(("#", "/")):
             return ""
+        if expr == "\\t":
+            return "\t"
+        if expr == "\\n":
+            return "\n"
         value = eval_expr(expr, context)
         if value in (None, ""):
             return "-"
